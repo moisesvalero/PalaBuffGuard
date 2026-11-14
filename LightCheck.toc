@@ -1,0 +1,8 @@
+## Interface: 16001
+## Title: LightCheck
+## Notes: Minimalist Paladin reminder for Righteous Fury, Aura, and Blessing with 1-click buffing.
+## Author: moisesvalero
+## Version: 1.0.0
+## SavedVariables: LightCheckDB
+
+LightCheck.lua
