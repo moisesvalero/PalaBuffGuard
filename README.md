@@ -1,10 +1,10 @@
-# 🛡️ LightCheck
+# 🛡️ PalaBuff
 
 **Recordatorio minimalista y lanzamiento en 1 clic de los bufos esenciales del Paladín para World of Warcraft Forever (`1.60.1`).**
 
-![Vista previa de LightCheck](docs/preview.png)
+![Vista previa de PalaBuff](docs/preview.png)
 
-> **Cero ruido visual:** LightCheck permanece completamente oculto mientras tengas tus bufos activos. Solo aparece cuando te falta **Furia justa**, **Aura** o **Bendición** (o cuando a tu bendición le quedan ≤ 30 segundos).
+> **Cero ruido visual:** PalaBuff permanece completamente oculto mientras tengas tus bufos activos. Solo aparece cuando te falta **Furia justa**, **Aura** o **Bendición** (o cuando a tu bendición le quedan ≤ 30 segundos).
 
 ---
 
@@ -27,38 +27,38 @@
 ## 📦 Instalación
 
 1. Descarga la última versión desde [Releases](../../releases) o clona este repositorio.
-2. Copia la carpeta **`LightCheck`** dentro de tu directorio de AddOns:
+2. Copia la carpeta **`PalaBuff`** dentro de tu directorio de AddOns:
    ```text
-   World of Warcraft/_forever_/Interface/AddOns/LightCheck/
+   World of Warcraft/_forever_/Interface/AddOns/PalaBuff/
    ```
-3. Verifica que dentro de la carpeta estén directamente `LightCheck.toc` y `LightCheck.lua`.
-4. Reinicia WoW (o escribe `/reload`) y asegúrate de tener **LightCheck** activado en *Accesorios*.
+3. Verifica que dentro de la carpeta estén directamente `PalaBuff.toc` y `PalaBuff.lua`.
+4. Reinicia WoW (o escribe `/reload`) y asegúrate de tener **PalaBuff** activado en *Accesorios*.
 
 ---
 
 ## 🎮 Comandos en el juego
 
-Puedes usar **`/lc`** o **`/lightcheck`** (también se mantienen `/furia` y `/fa` como alias):
+Puedes usar **`/pb`** o **`/palabuff`** (también se mantienen `/furia` y `/fa` como alias):
 
 | Comando | Acción |
 | :--- | :--- |
-| `/lc` o `/lc mover` | Activa/desactiva el modo mover para arrastrar los iconos donde quieras (clic derecho para bloquear). |
-| `/lc scale <0.4 - 2.0>` | Ajusta el tamaño del HUD (por defecto `0.85`). Ejemplo: `/lc scale 1.0`. |
-| `/lc texto` | Muestra u oculta las etiquetas inferiores (`FURIA`, `AURA`, `BENDICIÓN`). |
-| `/lc rf` | Activa o desactiva el aviso de **Furia justa**. |
-| `/lc aura` | Activa o desactiva el aviso de **Aura**. |
-| `/lc bendicion` | Activa o desactiva el aviso de **Bendición**. |
-| `/lc combate` | Alterna entre avisar **siempre** o **solo en combate**. |
-| `/lc reset` | Restablece la posición y el tamaño por defecto. |
+| `/pb` o `/pb mover` | Activa/desactiva el modo mover para arrastrar los iconos donde quieras (clic derecho para bloquear). |
+| `/pb scale <0.4 - 2.0>` | Ajusta el tamaño del HUD (por defecto `0.85`). Ejemplo: `/pb scale 1.0`. |
+| `/pb texto` | Muestra u oculta las etiquetas inferiores (`FURIA`, `AURA`, `BENDICIÓN`). |
+| `/pb rf` | Activa o desactiva el aviso de **Furia justa**. |
+| `/pb aura` | Activa o desactiva el aviso de **Aura**. |
+| `/pb bendicion` | Activa o desactiva el aviso de **Bendición**. |
+| `/pb combate` | Alterna entre avisar **siempre** o **solo en combate**. |
+| `/pb reset` | Restablece la posición y el tamaño por defecto. |
 
 ---
 
 ## 🛠️ Estructura del proyecto
 
 ```text
-LightCheck/
-├── LightCheck.toc      # Metadatos del addon (Interface 16001, SavedVariables)
-├── LightCheck.lua      # Lógica principal, escaneo de auras y botones seguros
+PalaBuff/
+├── PalaBuff.toc      # Metadatos del addon (Interface 16001, SavedVariables)
+├── PalaBuff.lua      # Lógica principal, escaneo de auras y botones seguros
 ├── docs/
 │   └── preview.png     # Captura / vista previa del HUD
 ├── CHANGELOG.md        # Historial de versiones
