@@ -1,12 +1,12 @@
 local addonName = ...
 
 -- Always-visible invisible driver frame so OnUpdate continues running while the visual HUD is hidden
-local driver = CreateFrame("Frame", "PalaBuffDriver", UIParent)
-local frame = CreateFrame("Frame", "PalaBuffFrame", UIParent)
+local driver = CreateFrame("Frame", "BuffGuardDriver", UIParent)
+local frame = CreateFrame("Frame", "BuffGuardFrame", UIParent)
 frame:Hide()
 
 -- C++ state-driven secure parent: automatically hides click overlays in combat so they never block camera turning
-local secureHolder = CreateFrame("Frame", "PalaBuffSecureHolder", UIParent, "SecureHandlerStateTemplate")
+local secureHolder = CreateFrame("Frame", "BuffGuardSecureHolder", UIParent, "SecureHandlerStateTemplate")
 secureHolder:SetAllPoints(UIParent)
 if RegisterStateDriver then
     pcall(RegisterStateDriver, secureHolder, "visibility", "[combat] hide; show")
@@ -136,7 +136,7 @@ local function InCombat()
 end
 
 local function Message(text)
-    DEFAULT_CHAT_FRAME:AddMessage("|cffffd36aPalaBuff:|r " .. text)
+    DEFAULT_CHAT_FRAME:AddMessage("|cffffd36aBuffGuard:|r " .. text)
 end
 
 local function HasAtlas(name)
@@ -295,7 +295,7 @@ local function CreateBadge(key, labelText, defaultIcon)
     badge.label = label
 
     -- Secure Action Button overlay parented to secureHolder and anchored to UIParent (never to badge/frame)
-    local clickBtn = CreateFrame("Button", "PalaBuffBtn_" .. key, secureHolder, "SecureActionButtonTemplate")
+    local clickBtn = CreateFrame("Button", "BuffGuardBtn_" .. key, secureHolder, "SecureActionButtonTemplate")
     clickBtn:SetSize(ICON_SIZE, ICON_SIZE)
     clickBtn:SetFrameStrata("MEDIUM")
     clickBtn:SetFrameLevel(badge:GetFrameLevel() + 10)
@@ -426,7 +426,7 @@ frame:SetScript("OnMouseUp", function(_, button)
         unlocked = false
         ApplyPosition()
         Render()
-        Message("Posición bloqueada. Escribe |cffffd36a/pb|r si quieres volver a moverlo.")
+        Message("Posición bloqueada. Escribe |cffffd36a/bguard|r si quieres volver a moverlo.")
     end
 end)
 
@@ -728,8 +728,8 @@ local function HandleAuraDelta(updateInfo)
 end
 
 local function EnsureDB()
-    PalaBuffDB = type(PalaBuffDB) == "table" and PalaBuffDB or {}
-    db = PalaBuffDB
+    BuffGuardDB = type(BuffGuardDB) == "table" and BuffGuardDB or {}
+    db = BuffGuardDB
     if type(db.x) ~= "number" then db.x = 0 end
     if type(db.y) ~= "number" then db.y = 140 end
     if type(db.scale) ~= "number" then db.scale = 0.85 end
@@ -742,11 +742,11 @@ local function EnsureDB()
     return db
 end
 
-SLASH_PALABUFF1 = "/palabuff"
-SLASH_PALABUFF2 = "/pb"
-SLASH_PALABUFF3 = "/pb"
-SLASH_PALABUFF4 = "/fa"
-SlashCmdList["PALABUFF"] = function(msg)
+SLASH_BUFFGUARD1 = "/buffguard"
+SLASH_BUFFGUARD2 = "/bguard"
+SLASH_BUFFGUARD3 = "/bguard"
+SLASH_BUFFGUARD4 = "/fa"
+SlashCmdList["BUFFGUARD"] = function(msg)
     EnsureDB()
     local cmd, arg = (msg or ""):match("^(%S*)%s*(.-)%s*$")
     cmd = (cmd or ""):lower()
@@ -766,7 +766,7 @@ SlashCmdList["PALABUFF"] = function(msg)
         ApplyPosition()
         Render()
         if unlocked then
-            Message("Modo mover |cff00ff00ACTIVO|r. Arrastra los iconos y haz |cffffd36aclic derecho|r (o escribe /pb) para bloquear.")
+            Message("Modo mover |cff00ff00ACTIVO|r. Arrastra los iconos y haz |cffffd36aclic derecho|r (o escribe /bguard) para bloquear.")
         else
             Message("Posición |cffffd36abloqueada|r.")
         end
@@ -778,7 +778,7 @@ SlashCmdList["PALABUFF"] = function(msg)
             Render()
             Message("Tamaño ajustado a |cffffd36a" .. val .. "|r.")
         else
-            Message("Usa: |cffffd36a/pb scale 0.8|r (entre 0.4 y 2.0)")
+            Message("Usa: |cffffd36a/bguard scale 0.8|r (entre 0.4 y 2.0)")
         end
     elseif cmd == "texto" or cmd == "text" or cmd == "labels" then
         db.showLabels = not (db.showLabels ~= false)
@@ -806,7 +806,7 @@ SlashCmdList["PALABUFF"] = function(msg)
         Render()
         Message("Posición y tamaño restablecidos.")
     else
-        Message("Comandos: |cffffd36a/pb|r (mover) | |cffffd36a/pb scale 0.8|r | |cffffd36a/pb texto|r | |cffffd36a/pb rf|r | |cffffd36a/pb aura|r | |cffffd36a/pb bendicion|r | |cffffd36a/pb combate|r | |cffffd36a/pb reset|r")
+        Message("Comandos: |cffffd36a/bguard|r (mover) | |cffffd36a/bguard scale 0.8|r | |cffffd36a/bguard texto|r | |cffffd36a/bguard rf|r | |cffffd36a/bguard aura|r | |cffffd36a/bguard bendicion|r | |cffffd36a/bguard combate|r | |cffffd36a/bguard reset|r")
     end
 end
 
@@ -848,7 +848,7 @@ driver:SetScript("OnEvent", function(_, event, unit, castGUID, spellID)
         if not db.welcomed then
             db.welcomed = true
             previewUntil = GetTime() + 4
-            Message("Activado. Escribe |cffffd36a/pb|r para mover los iconos o haz clic en ellos para bufarte.")
+            Message("Activado. Escribe |cffffd36a/bguard|r para mover los iconos o haz clic en ellos para bufarte.")
         end
         Render()
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
