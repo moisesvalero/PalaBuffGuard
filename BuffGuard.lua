@@ -13,6 +13,7 @@ if RegisterStateDriver then
 end
 
 local db
+local isPaladin = true
 local inCombat = false
 local unlocked = false
 local previewUntil = 0
@@ -25,10 +26,38 @@ local talentPoints = { 0, 0, 0 } -- { Holy, Protection, Retribution }
 local Render
 
 ---------------------------------------------------------------------------
+-- WoW Forever (1.60.1 / 16001) Secret Value & Type Guards
+---------------------------------------------------------------------------
+
+local function IsSecret(value)
+    return value ~= nil and issecretvalue ~= nil and issecretvalue(value) and true or false
+end
+
+local function IsReadable(value)
+    return not IsSecret(value)
+end
+
+local function IsFiniteNumber(value)
+    return not IsSecret(value) and type(value) == "number"
+        and value == value and value > -math.huge and value < math.huge
+end
+
+local function IsReadableString(value)
+    return not IsSecret(value) and type(value) == "string"
+end
+
+local function InCombat()
+    return (InCombatLockdown and InCombatLockdown()) or inCombat
+end
+
+---------------------------------------------------------------------------
 -- Localization (esES / esMX & enUS / enGB)
 ---------------------------------------------------------------------------
 
 local clientLocale = (GetLocale and GetLocale()) or "enUS"
+if IsSecret(clientLocale) or type(clientLocale) ~= "string" then
+    clientLocale = "enUS"
+end
 local defaultLang = (clientLocale == "esES" or clientLocale == "esMX") and "es" or "en"
 
 local L_TABLE = {
@@ -64,6 +93,9 @@ local L_TABLE = {
         SPEC_NONE = "Sin talentos (< nivel 10)",
         STATE_ACTIVE = "vigilando",
         STATE_INACTIVE = "no requerida en esta rama",
+        TIP_LEFT = "Clic izquierdo: Mover / Bloquear iconos",
+        TIP_RIGHT = "Clic derecho: Ver estado y rama en el chat",
+        MSG_NOT_PALADIN = "Solo activo para la clase Paladín.",
     },
     en = {
         LABEL_RF = "FURY",
@@ -97,6 +129,9 @@ local L_TABLE = {
         SPEC_NONE = "No talents (< level 10)",
         STATE_ACTIVE = "watching",
         STATE_INACTIVE = "not required in this spec",
+        TIP_LEFT = "Left-click: Move / Lock icons",
+        TIP_RIGHT = "Right-click: Print spec status in chat",
+        MSG_NOT_PALADIN = "Only active for Paladin characters.",
     },
 }
 
@@ -112,20 +147,39 @@ local function L(key)
     return langTable[key] or L_TABLE.es[key] or key
 end
 
+local function Message(text)
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffffd36aBuffGuard:|r " .. text)
+    end
+end
+
+local function HasAtlas(name)
+    return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name)
+end
+
 ---------------------------------------------------------------------------
 -- Spell IDs & Localized Fallbacks (WoW Forever 16001)
 ---------------------------------------------------------------------------
 
 local RF_SPELL_IDS = { 25780 }
+local DEVOTION_AURA_IDS = { 465, 10290, 643, 10291, 1032, 10292, 10293 }
+local RETRIBUTION_AURA_IDS = { 7294, 10298, 10299, 10300, 10301 }
+local CONCENTRATION_AURA_IDS = { 19746 }
+local SANCTITY_AURA_IDS = { 20218 }
 local AURA_SPELL_IDS = {
-    465,   -- Devotion Aura
-    7294,  -- Retribution Aura
-    19746, -- Concentration Aura
-    19876, -- Shadow Resistance Aura
-    19888, -- Frost Resistance Aura
-    19891, -- Fire Resistance Aura
-    20218, -- Sanctity Aura
+    465, 10290, 643, 10291, 1032, 10292, 10293, -- Devotion Aura
+    7294, 10298, 10299, 10300, 10301,           -- Retribution Aura
+    19746,                                      -- Concentration Aura
+    19876, 19895, 19896,                        -- Shadow Resistance Aura
+    19888, 19897, 19898,                        -- Frost Resistance Aura
+    19891, 19899, 19900,                        -- Fire Resistance Aura
+    20218,                                      -- Sanctity Aura
 }
+
+local MIGHT_BLESSING_IDS = { 19740, 19834, 19835, 19836, 19837, 19838, 25291 }
+local WISDOM_BLESSING_IDS = { 19742, 19850, 19852, 19853, 19854, 25290 }
+local KINGS_BLESSING_IDS = { 20217 }
+local SANCTUARY_BLESSING_IDS = { 20911, 20912, 20913, 20914 }
 local BLESSING_SPELL_IDS = {
     19740, 19834, 19835, 19836, 19837, 19838, 25291, -- Might
     19742, 19850, 19852, 19853, 19854, 25290,        -- Wisdom
@@ -219,43 +273,44 @@ local resolvedSpells = {
 -- Tracked runtime state (persists across restricted combat scans)
 local tracked = {
     rf = { active = false, expirationTime = 0, duration = 1800, icon = DEFAULT_ICONS.rf, instanceID = nil },
-    aura = { active = false, expirationTime = 0, duration = 0, icon = DEFAULT_ICONS.aura, instanceID = nil },
+    aura = { active = false, fromForm = false, expirationTime = 0, duration = 0, icon = DEFAULT_ICONS.aura, instanceID = nil },
     blessing = { active = false, expirationTime = 0, duration = 300, icon = DEFAULT_ICONS.blessing, instanceID = nil },
 }
 
-local function IsReadable(value)
-    return not (issecretvalue and issecretvalue(value))
-end
+local auraSpellIDSet = {}
+for _, id in ipairs(AURA_SPELL_IDS) do auraSpellIDSet[id] = true end
 
-local function IsFiniteNumber(value)
-    return IsReadable(value) and type(value) == "number"
-        and value == value and value > -math.huge and value < math.huge
-end
+local blessingSpellIDSet = {}
+for _, id in ipairs(BLESSING_SPELL_IDS) do blessingSpellIDSet[id] = true end
 
-local function IsReadableString(value)
-    return IsReadable(value) and type(value) == "string"
-end
+local greaterBlessingSpellIDSet = {
+    [25782] = true, [25916] = true,
+    [25894] = true, [25918] = true,
+    [25898] = true, [25899] = true,
+    [25890] = true, [25895] = true,
+}
 
-local function InCombat()
-    return (InCombatLockdown and InCombatLockdown()) or inCombat
-end
-
-local function Message(text)
-    DEFAULT_CHAT_FRAME:AddMessage("|cffffd36aBuffGuard:|r " .. text)
-end
-
-local function HasAtlas(name)
-    return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name)
-end
-
-local function IsPlayerSpellKnown(spellID)
+local function IsSingleSpellKnown(spellID)
     if C_SpellBook and C_SpellBook.IsSpellKnown then
         local ok, known = pcall(C_SpellBook.IsSpellKnown, spellID)
+        if ok and IsReadable(known) and known then return true end
+    end
+    if IsPlayerSpell then
+        local ok, known = pcall(IsPlayerSpell, spellID)
         if ok and IsReadable(known) and known then return true end
     end
     if IsSpellKnown then
         local ok, known = pcall(IsSpellKnown, spellID)
         if ok and IsReadable(known) and known then return true end
+    end
+    return false
+end
+
+local function IsAnyRankKnown(idList)
+    for _, id in ipairs(idList) do
+        if IsSingleSpellKnown(id) then
+            return true
+        end
     end
     return false
 end
@@ -271,25 +326,33 @@ local function GetForeverTreePoints()
         local ok, config = pcall(CT.GetActiveConfigID)
         if ok and IsFiniteNumber(config) then
             local ok2, info = pcall(T.GetConfigInfo, config)
-            local tree = ok2 and type(info) == "table" and type(info.treeIDs) == "table" and info.treeIDs[1]
+            local tree = ok2 and not IsSecret(info) and type(info) == "table"
+                and not IsSecret(info.treeIDs) and type(info.treeIDs) == "table"
+                and info.treeIDs[1]
             if IsFiniteNumber(tree) then
                 local ok3, shown = pcall(T.GetGroupDisplayInfoByTreeID, tree)
-                if ok3 and type(shown) == "table" and shown[1] then
+                if ok3 and not IsSecret(shown) and type(shown) == "table" and shown[1] then
                     local ids = {}
-                    for i, d in ipairs(shown) do ids[i] = d.groupID end
+                    for i, d in ipairs(shown) do
+                        if not IsSecret(d) and type(d) == "table" and IsFiniteNumber(d.groupID) then
+                            ids[#ids + 1] = d.groupID
+                        end
+                    end
                     local ok4, groups = pcall(T.GetGroupCurrencyInfo, config, ids)
                     local spent = {}
-                    if ok4 and type(groups) == "table" then
+                    if ok4 and not IsSecret(groups) and type(groups) == "table" then
                         for _, g in ipairs(groups) do
-                            local c = type(g) == "table" and type(g.currencyInfos) == "table" and g.currencyInfos[1]
-                            if type(c) == "table" and g.traitNodeGroupID ~= nil and IsFiniteNumber(c.spent) then
-                                spent[g.traitNodeGroupID] = c.spent
+                            if not IsSecret(g) and type(g) == "table" then
+                                local c = not IsSecret(g.currencyInfos) and type(g.currencyInfos) == "table" and g.currencyInfos[1]
+                                if not IsSecret(c) and type(c) == "table" and IsFiniteNumber(g.traitNodeGroupID) and IsFiniteNumber(c.spent) then
+                                    spent[g.traitNodeGroupID] = c.spent
+                                end
                             end
                         end
                     end
-                    local p1 = (shown[1] and spent[shown[1].groupID]) or 0
-                    local p2 = (shown[2] and spent[shown[2].groupID]) or 0
-                    local p3 = (shown[3] and spent[shown[3].groupID]) or 0
+                    local p1 = (shown[1] and not IsSecret(shown[1]) and spent[shown[1].groupID]) or 0
+                    local p2 = (shown[2] and not IsSecret(shown[2]) and spent[shown[2].groupID]) or 0
+                    local p3 = (shown[3] and not IsSecret(shown[3]) and spent[shown[3].groupID]) or 0
                     return p1, p2, p3, true
                 end
             end
@@ -333,32 +396,39 @@ local function GetForeverTreePoints()
 end
 
 local function DetectPaladinSpec()
+    local prevSpec = currentSpec
     local p1, p2, p3, found = GetForeverTreePoints()
     talentPoints[1], talentPoints[2], talentPoints[3] = p1, p2, p3
 
+    local newSpec = "none"
     if found and (p1 > 0 or p2 > 0 or p3 > 0) then
         if p2 > 0 and p2 >= p1 and p2 >= p3 then
-            currentSpec = "protection"
+            newSpec = "protection"
         elseif p1 > 0 and p1 >= p2 and p1 >= p3 then
-            currentSpec = "holy"
+            newSpec = "holy"
         else
-            currentSpec = "retribution"
+            newSpec = "retribution"
         end
-        return currentSpec
+    else
+        -- Fallback: Primary spec selection on clients where 0 points are spent but a tab is selected
+        local S = C_SpecializationInfo
+        if S and S.GetSpecialization then
+            local ok, idx = pcall(S.GetSpecialization)
+            if ok and IsFiniteNumber(idx) then
+                if idx == 1 then newSpec = "holy"
+                elseif idx == 2 then newSpec = "protection"
+                elseif idx == 3 then newSpec = "retribution"
+                end
+            end
+        end
     end
 
-    -- Fallback: Primary spec selection on clients where 0 points are spent but a tab is selected
-    local S = C_SpecializationInfo
-    if S and S.GetSpecialization then
-        local ok, idx = pcall(S.GetSpecialization)
-        if ok and IsFiniteNumber(idx) then
-            if idx == 1 then currentSpec = "holy"; return currentSpec end
-            if idx == 2 then currentSpec = "protection"; return currentSpec end
-            if idx == 3 then currentSpec = "retribution"; return currentSpec end
-        end
+    currentSpec = newSpec
+    if prevSpec ~= "none" and newSpec ~= "none" and prevSpec ~= newSpec and db then
+        -- Reset remembered spec-specific buffs on talent respec so 1-click adapts to the new tree
+        db.lastAuraName = nil
+        db.lastBlessingName = nil
     end
-
-    currentSpec = "none"
     return currentSpec
 end
 
@@ -376,65 +446,100 @@ local function ShouldTrackRF()
     end
 end
 
--- Returns smart primary & secondary spells for Aura and Blessing based on active talent tree
+-- Returns smart primary & secondary spells for Aura and Blessing based on active talent tree & learned spells
 local function GetSpecDefaultSpells()
-    local auraPrimary = resolvedSpells.retributionAura
-    local auraSecondary = resolvedSpells.devotionAura
+    local hasRetAura = IsAnyRankKnown(RETRIBUTION_AURA_IDS)
+    local hasConcAura = IsAnyRankKnown(CONCENTRATION_AURA_IDS)
+    local hasSancAura = IsAnyRankKnown(SANCTITY_AURA_IDS)
+    local hasWisdom = IsAnyRankKnown(WISDOM_BLESSING_IDS)
+    local hasKings = IsAnyRankKnown(KINGS_BLESSING_IDS)
+    local hasSanctuary = IsAnyRankKnown(SANCTUARY_BLESSING_IDS)
+
+    local auraPrimary = resolvedSpells.devotionAura
+    local auraSecondary = hasRetAura and resolvedSpells.retributionAura or resolvedSpells.devotionAura
     local blessPrimary = resolvedSpells.blessingMight
-    local blessSecondary = resolvedSpells.blessingWisdom
+    local blessSecondary = hasWisdom and resolvedSpells.blessingWisdom or resolvedSpells.blessingMight
 
     if currentSpec == "protection" then
         auraPrimary = resolvedSpells.devotionAura
-        auraSecondary = resolvedSpells.retributionAura
-        if IsPlayerSpellKnown(20911) then
+        auraSecondary = hasRetAura and resolvedSpells.retributionAura or resolvedSpells.devotionAura
+        if hasSanctuary then
             blessPrimary = resolvedSpells.blessingSanctuary
+            blessSecondary = resolvedSpells.blessingMight
+        elseif hasKings then
+            blessPrimary = resolvedSpells.blessingKings
             blessSecondary = resolvedSpells.blessingMight
         else
             blessPrimary = resolvedSpells.blessingMight
-            blessSecondary = resolvedSpells.blessingWisdom
+            blessSecondary = hasWisdom and resolvedSpells.blessingWisdom or resolvedSpells.blessingMight
         end
     elseif currentSpec == "holy" then
-        if IsPlayerSpellKnown(19746) then
+        if hasConcAura then
             auraPrimary = resolvedSpells.concentrationAura
             auraSecondary = resolvedSpells.devotionAura
         else
             auraPrimary = resolvedSpells.devotionAura
-            auraSecondary = resolvedSpells.retributionAura
+            auraSecondary = hasRetAura and resolvedSpells.retributionAura or resolvedSpells.devotionAura
         end
-        blessPrimary = resolvedSpells.blessingWisdom
-        if IsPlayerSpellKnown(20217) then
+        blessPrimary = hasWisdom and resolvedSpells.blessingWisdom or resolvedSpells.blessingMight
+        if hasKings then
             blessSecondary = resolvedSpells.blessingKings
         else
             blessSecondary = resolvedSpells.blessingMight
         end
     else
         -- Retribution or pre-10 leveling
-        if IsPlayerSpellKnown(20218) then
+        if hasSancAura then
             auraPrimary = resolvedSpells.sanctityAura
-            auraSecondary = resolvedSpells.retributionAura
-        else
+            auraSecondary = hasRetAura and resolvedSpells.retributionAura or resolvedSpells.devotionAura
+        elseif hasRetAura then
             auraPrimary = resolvedSpells.retributionAura
+            auraSecondary = resolvedSpells.devotionAura
+        else
+            auraPrimary = resolvedSpells.devotionAura
             auraSecondary = resolvedSpells.devotionAura
         end
         blessPrimary = resolvedSpells.blessingMight
-        blessSecondary = resolvedSpells.blessingWisdom
+        blessSecondary = hasWisdom and resolvedSpells.blessingWisdom or resolvedSpells.blessingMight
     end
 
     return auraPrimary, auraSecondary, blessPrimary, blessSecondary
 end
 
+local function IsSavedSpellUsable(spellName)
+    if not IsReadableString(spellName) or spellName == "" then return false end
+    -- Only enforce spellbook validation once baseline level 1/4 Paladin spells report known
+    local spellbookReady = IsAnyRankKnown(DEVOTION_AURA_IDS) or IsAnyRankKnown(MIGHT_BLESSING_IDS)
+    if not spellbookReady then return true end
+
+    if spellName == resolvedSpells.sanctityAura or spellName == "Aura de santidad" or spellName == "Sanctity Aura" then
+        return IsAnyRankKnown(SANCTITY_AURA_IDS)
+    elseif spellName == resolvedSpells.concentrationAura or spellName == "Aura de concentración" or spellName == "Concentration Aura" then
+        return IsAnyRankKnown(CONCENTRATION_AURA_IDS)
+    elseif spellName == resolvedSpells.retributionAura or spellName == "Aura de represalia" or spellName == "Aura de retribución" or spellName == "Retribution Aura" then
+        return IsAnyRankKnown(RETRIBUTION_AURA_IDS)
+    elseif spellName == resolvedSpells.blessingSanctuary or spellName == "Bendición de salvaguardia" or spellName == "Bendición de santuario" or spellName == "Blessing of Sanctuary" then
+        return IsAnyRankKnown(SANCTUARY_BLESSING_IDS)
+    elseif spellName == resolvedSpells.blessingKings or spellName == "Bendición de los Reyes" or spellName == "Bendición de reyes" or spellName == "Blessing of Kings" then
+        return IsAnyRankKnown(KINGS_BLESSING_IDS)
+    elseif spellName == resolvedSpells.blessingWisdom or spellName == "Bendición de Sabiduría" or spellName == "Bendición de sabiduría" or spellName == "Blessing of Wisdom" then
+        return IsAnyRankKnown(WISDOM_BLESSING_IDS)
+    end
+    return true
+end
+
 local function BuildSpellNames()
     if not (C_Spell and C_Spell.GetSpellName) then return end
     for _, id in ipairs(RF_SPELL_IDS) do
-        local name = C_Spell.GetSpellName(id)
-        if IsReadableString(name) and name ~= "" then
+        local ok, name = pcall(C_Spell.GetSpellName, id)
+        if ok and IsReadableString(name) and name ~= "" then
             rfNames[name] = true
             resolvedSpells.rf = name
         end
     end
     for _, id in ipairs(AURA_SPELL_IDS) do
-        local name = C_Spell.GetSpellName(id)
-        if IsReadableString(name) and name ~= "" then
+        local ok, name = pcall(C_Spell.GetSpellName, id)
+        if ok and IsReadableString(name) and name ~= "" then
             auraNames[name] = true
             if id == 465 then resolvedSpells.devotionAura = name end
             if id == 7294 then resolvedSpells.retributionAura = name end
@@ -443,8 +548,8 @@ local function BuildSpellNames()
         end
     end
     for _, id in ipairs(BLESSING_SPELL_IDS) do
-        local name = C_Spell.GetSpellName(id)
-        if IsReadableString(name) and name ~= "" then
+        local ok, name = pcall(C_Spell.GetSpellName, id)
+        if ok and IsReadableString(name) and name ~= "" then
             blessingNames[name] = true
             if id == 19740 then resolvedSpells.blessingMight = name end
             if id == 19742 then resolvedSpells.blessingWisdom = name end
@@ -589,6 +694,8 @@ local function CreateBadge(key, labelKey, defaultIcon)
     clickBtn:SetFrameLevel(badge:GetFrameLevel() + 10)
     clickBtn:RegisterForClicks("AnyUp", "AnyDown")
     clickBtn:SetAttribute("type", "macro")
+    clickBtn:SetAttribute("type1", "macro")
+    clickBtn:SetAttribute("type2", "macro")
     clickBtn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
     clickBtn:Hide()
     badge.clickBtn = clickBtn
@@ -614,11 +721,17 @@ local function RefreshBadgeLabels()
 end
 
 local function UpdateSecureButton(btn, macro1, macro2, scale, targetX, targetY, shouldShow)
+    if InCombat() then
+        pendingSecureSync = true
+        return
+    end
     if btn.lastMacro1 ~= macro1 then
+        btn:SetAttribute("macrotext1", macro1)
         btn:SetAttribute("*macrotext1", macro1)
         btn.lastMacro1 = macro1
     end
     if btn.lastMacro2 ~= macro2 then
+        btn:SetAttribute("macrotext2", macro2)
         btn:SetAttribute("*macrotext2", macro2)
         btn.lastMacro2 = macro2
     end
@@ -640,7 +753,7 @@ end
 
 -- Updates macro text and positions on the SecureActionButtonTemplate overlays (only outside combat)
 local function SyncSecureButtons()
-    if InCombatLockdown and InCombatLockdown() then
+    if InCombat() then
         pendingSecureSync = true
         return
     end
@@ -667,7 +780,8 @@ local function SyncSecureButtons()
     )
 
     -- 2. Aura macro ([noform] guarantees clicking never toggles an active aura off)
-    local aura1 = (db and db.lastAuraName) or defAura1
+    local savedAura = db and db.lastAuraName
+    local aura1 = IsSavedSpellUsable(savedAura) and savedAura or defAura1
     local aura2 = (aura1 == defAura2) and defAura1 or defAura2
     UpdateSecureButton(
         badges.aura.clickBtn,
@@ -680,7 +794,8 @@ local function SyncSecureButtons()
     )
 
     -- 3. Blessing macro ([@player] casts max rank on self without losing hostile target)
-    local bless1 = (db and db.lastBlessingName) or defBless1
+    local savedBless = db and db.lastBlessingName
+    local bless1 = IsSavedSpellUsable(savedBless) and savedBless or defBless1
     local bless2 = (bless1 == defBless2) and defBless1 or defBless2
     UpdateSecureButton(
         badges.blessing.clickBtn,
@@ -713,7 +828,9 @@ frame:SetScript("OnDragStop", function(self)
     local centerX, centerY = self:GetCenter()
     local parentX, parentY = UIParent:GetCenter()
     local scale = self:GetScale()
-    if centerX and centerY and parentX and parentY and scale and scale > 0 then
+    if IsFiniteNumber(centerX) and IsFiniteNumber(centerY)
+        and IsFiniteNumber(parentX) and IsFiniteNumber(parentY)
+        and IsFiniteNumber(scale) and scale > 0 then
         db.x = centerX - parentX / scale
         db.y = centerY - parentY / scale
     end
@@ -729,7 +846,7 @@ frame:SetScript("OnMouseUp", function(_, button)
     end
 end)
 
--- Query helper using C_UnitAuras
+-- Query helper using C_UnitAuras (guards both the returned table and its fields against secret values)
 local function QuerySpellGroup(namesTable)
     if not (C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName) then
         return nil, true
@@ -737,10 +854,14 @@ local function QuerySpellGroup(namesTable)
     local anyRestricted = false
     for name in pairs(namesTable) do
         local ok, aura = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", name, "HELPFUL")
-        if not ok or not IsReadable(aura) then
+        if not ok or IsSecret(aura) then
             anyRestricted = true
-        elseif aura then
-            return aura, false
+        elseif type(aura) == "table" then
+            if IsSecret(aura.name) or IsSecret(aura.expirationTime) then
+                anyRestricted = true
+            else
+                return aura, false
+            end
         end
     end
     return nil, anyRestricted
@@ -748,27 +869,37 @@ end
 
 local function ScanAllBuffs()
     local now = GetTime()
-    DetectPaladinSpec()
+
+    -- If spec is still unknown at level >= 10 outside combat, try detecting once C_Traits is ready
+    if currentSpec == "none" and not InCombat() then
+        local lvl = UnitLevel and UnitLevel("player")
+        if IsFiniteNumber(lvl) and lvl >= 10 then
+            DetectPaladinSpec()
+        end
+    end
 
     -- 1. Check Aura via Shapeshift Form (100% reliable in and out of combat) + buff fallback
     local form = GetShapeshiftForm and GetShapeshiftForm() or 0
     if IsFiniteNumber(form) and form > 0 then
         tracked.aura.active = true
+        tracked.aura.fromForm = true
         local icon, _, _, spellID = GetShapeshiftFormInfo and GetShapeshiftFormInfo(form)
         if IsReadable(icon) and icon then tracked.aura.icon = icon end
         if IsFiniteNumber(spellID) and C_Spell and C_Spell.GetSpellName then
-            local formName = C_Spell.GetSpellName(spellID)
-            if IsReadableString(formName) and formName ~= "" and db then
+            local ok, formName = pcall(C_Spell.GetSpellName, spellID)
+            if ok and IsReadableString(formName) and formName ~= "" and db then
                 db.lastAuraName = formName
             end
         end
     else
-        local auraData = QuerySpellGroup(auraNames)
+        local auraData, auraRestricted = QuerySpellGroup(auraNames)
         if auraData then
             tracked.aura.active = true
+            tracked.aura.fromForm = false
             if IsReadable(auraData.icon) and auraData.icon then tracked.aura.icon = auraData.icon end
-        else
+        elseif tracked.aura.fromForm or not inCombat or not auraRestricted then
             tracked.aura.active = false
+            tracked.aura.fromForm = false
         end
     end
 
@@ -803,7 +934,7 @@ local function ScanAllBuffs()
     if not blessData and not inCombat and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
         for i = 1, 40 do
             local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
-            if not ok or not IsReadable(aura) or not aura then break end
+            if not ok or IsSecret(aura) or type(aura) ~= "table" then break end
             if IsBlessingName(aura.name) then
                 blessData = aura
                 break
@@ -844,9 +975,9 @@ end
 local function ShouldSuppressAll()
     if unlocked then return false end
     if GetTime() < previewUntil then return false end
-    if UnitIsDeadOrGhost and UnitIsDeadOrGhost("player") then return true end
-    if UnitOnTaxi and UnitOnTaxi("player") then return true end
-    if UnitInVehicle and UnitInVehicle("player") then return true end
+    if UnitIsDeadOrGhost and IsReadable(UnitIsDeadOrGhost("player")) and UnitIsDeadOrGhost("player") then return true end
+    if UnitOnTaxi and IsReadable(UnitOnTaxi("player")) and UnitOnTaxi("player") then return true end
+    if UnitInVehicle and IsReadable(UnitInVehicle("player")) and UnitInVehicle("player") then return true end
     if db.combatOnly and not inCombat then return true end
     return false
 end
@@ -881,7 +1012,10 @@ local function StyleBadgeState(badge, state, remaining)
 end
 
 Render = function()
-    if not db then return end
+    if not db or not isPaladin then
+        frame:Hide()
+        return
+    end
     if ShouldSuppressAll() then
         frame:Hide()
         SyncSecureButtons()
@@ -982,11 +1116,11 @@ end)
 
 -- Handle UNIT_AURA delta updates for combat responsiveness
 local function HandleAuraDelta(updateInfo)
-    if not IsReadable(updateInfo) or type(updateInfo) ~= "table" then return end
+    if IsSecret(updateInfo) or type(updateInfo) ~= "table" then return end
     local now = GetTime()
 
     local removed = updateInfo.removedAuraInstanceIDs
-    if IsReadable(removed) and type(removed) == "table" then
+    if not IsSecret(removed) and type(removed) == "table" then
         for _, id in ipairs(removed) do
             if IsFiniteNumber(id) then
                 if tracked.rf.instanceID and id == tracked.rf.instanceID then
@@ -1002,9 +1136,9 @@ local function HandleAuraDelta(updateInfo)
     end
 
     local added = updateInfo.addedAuras
-    if IsReadable(added) and type(added) == "table" then
+    if not IsSecret(added) and type(added) == "table" then
         for _, aura in ipairs(added) do
-            if IsReadable(aura) and type(aura) == "table" and IsReadableString(aura.name) then
+            if not IsSecret(aura) and type(aura) == "table" and IsReadableString(aura.name) then
                 if rfNames[aura.name] then
                     tracked.rf.active = true
                     tracked.rf.expirationTime = IsFiniteNumber(aura.expirationTime) and aura.expirationTime or (now + 1800)
@@ -1021,6 +1155,30 @@ local function HandleAuraDelta(updateInfo)
                     tracked.blessing.instanceID = IsFiniteNumber(aura.auraInstanceID) and aura.auraInstanceID or nil
                     if IsReadable(aura.icon) and aura.icon then tracked.blessing.icon = aura.icon end
                     if db then db.lastBlessingName = aura.name end
+                end
+            end
+        end
+    end
+
+    local updated = updateInfo.updatedAuraInstanceIDs
+    if not IsSecret(updated) and type(updated) == "table" and C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
+        for _, id in ipairs(updated) do
+            if IsFiniteNumber(id) then
+                local ok, aura = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, "player", id)
+                if ok and not IsSecret(aura) and type(aura) == "table" and IsReadableString(aura.name) then
+                    if rfNames[aura.name] then
+                        tracked.rf.active = true
+                        if IsFiniteNumber(aura.expirationTime) and aura.expirationTime > 0 then
+                            tracked.rf.expirationTime = aura.expirationTime
+                        end
+                        tracked.rf.instanceID = id
+                    elseif IsBlessingName(aura.name) then
+                        tracked.blessing.active = true
+                        if IsFiniteNumber(aura.expirationTime) and aura.expirationTime > 0 then
+                            tracked.blessing.expirationTime = aura.expirationTime
+                        end
+                        tracked.blessing.instanceID = id
+                    end
                 end
             end
         end
@@ -1059,12 +1217,20 @@ local function GetLocalizedSpecName()
     return L("SPEC_NONE")
 end
 
+---------------------------------------------------------------------------
+-- Slash Commands & WoW Forever Addon Compartment Callbacks
+---------------------------------------------------------------------------
+
 SLASH_BUFFGUARD1 = "/buffguard"
 SLASH_BUFFGUARD2 = "/bguard"
 SLASH_BUFFGUARD3 = "/furia"
 SLASH_BUFFGUARD4 = "/fa"
 SlashCmdList["BUFFGUARD"] = function(msg)
     EnsureDB()
+    if not isPaladin then
+        Message(L("MSG_NOT_PALADIN"))
+        return
+    end
     local cmd, arg = (msg or ""):match("^(%S*)%s*(.-)%s*$")
     cmd = (cmd or ""):lower()
     arg = (arg or ""):lower()
@@ -1124,7 +1290,6 @@ SlashCmdList["BUFFGUARD"] = function(msg)
         elseif arg == "off" or arg == "no" then
             db.rfMode = "off"
         else
-            -- Cycle: auto -> on -> off -> auto
             if db.rfMode == "auto" then
                 db.rfMode = "on"
             elseif db.rfMode == "on" then
@@ -1173,6 +1338,47 @@ SlashCmdList["BUFFGUARD"] = function(msg)
     end
 end
 
+function BuffGuard_OnAddonCompartmentClick(_, buttonName)
+    if buttonName == "RightButton" then
+        SlashCmdList["BUFFGUARD"]("status")
+    else
+        SlashCmdList["BUFFGUARD"]("move")
+    end
+end
+
+function BuffGuard_OnAddonCompartmentEnter(_, menuButtonFrame)
+    if not GameTooltip then return end
+    EnsureDB()
+    GameTooltip:SetOwner(menuButtonFrame or UIParent, "ANCHOR_LEFT")
+    GameTooltip:AddLine("BuffGuard", 1, 0.82, 0.4)
+    if not isPaladin then
+        GameTooltip:AddLine(L("MSG_NOT_PALADIN"), 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+        return
+    end
+    DetectPaladinSpec()
+    local rfState = ShouldTrackRF() and L("STATE_ACTIVE") or L("STATE_INACTIVE")
+    GameTooltip:AddLine(string.format(
+        L("MSG_STATUS"),
+        GetLocalizedSpecName(),
+        talentPoints[1], talentPoints[2], talentPoints[3],
+        (db.rfMode or "auto"):upper(),
+        rfState
+    ), 0.9, 0.9, 0.9, true)
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine(L("TIP_LEFT"), 0.7, 0.85, 1)
+    GameTooltip:AddLine(L("TIP_RIGHT"), 0.7, 0.85, 1)
+    GameTooltip:Show()
+end
+
+function BuffGuard_OnAddonCompartmentLeave()
+    if GameTooltip then GameTooltip:Hide() end
+end
+
+---------------------------------------------------------------------------
+-- Event Registration & Handling
+---------------------------------------------------------------------------
+
 local TALENT_EVENTS = {
     "TRAIT_CONFIG_UPDATED",
     "PLAYER_TALENT_UPDATE",
@@ -1181,17 +1387,28 @@ local TALENT_EVENTS = {
     "PLAYER_LEVEL_UP",
 }
 
+local function RegisterPlayerUnitEvent(ev)
+    if driver.RegisterUnitEvent then
+        local ok = pcall(driver.RegisterUnitEvent, driver, ev, "player")
+        if ok then return end
+    end
+    pcall(driver.RegisterEvent, driver, ev)
+end
+
 driver:RegisterEvent("ADDON_LOADED")
 driver:RegisterEvent("PLAYER_LOGIN")
 driver:SetScript("OnEvent", function(_, event, unit, castGUID, spellID)
     if event == "ADDON_LOADED" or event == "PLAYER_LOGIN" then
-        if event == "ADDON_LOADED" and unit ~= addonName then return end
+        if event == "ADDON_LOADED" and (IsSecret(unit) or unit ~= addonName) then return end
         local _, class = UnitClass("player")
-        if class and class ~= "PALADIN" then
+        if IsReadableString(class) and class ~= "PALADIN" then
+            isPaladin = false
             driver:UnregisterAllEvents()
             driver:SetScript("OnUpdate", nil)
+            frame:Hide()
             return
         end
+        isPaladin = true
 
         EnsureDB()
         RefreshBadgeLabels()
@@ -1200,8 +1417,8 @@ driver:SetScript("OnEvent", function(_, event, unit, castGUID, spellID)
         ApplyPosition()
 
         driver:RegisterEvent("PLAYER_ENTERING_WORLD")
-        driver:RegisterEvent("UNIT_AURA")
-        driver:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+        RegisterPlayerUnitEvent("UNIT_AURA")
+        RegisterPlayerUnitEvent("UNIT_SPELLCAST_SUCCEEDED")
         driver:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
         driver:RegisterEvent("PLAYER_REGEN_DISABLED")
         driver:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -1213,14 +1430,14 @@ driver:SetScript("OnEvent", function(_, event, unit, castGUID, spellID)
             pcall(driver.RegisterEvent, driver, tev)
         end
 
-        inCombat = UnitAffectingCombat and UnitAffectingCombat("player") == true
+        inCombat = UnitAffectingCombat and IsReadable(UnitAffectingCombat("player")) and UnitAffectingCombat("player") == true or false
         ScanAllBuffs()
         Render()
     elseif event == "PLAYER_ENTERING_WORLD" then
         RefreshBadgeLabels()
         BuildSpellNames()
         DetectPaladinSpec()
-        inCombat = UnitAffectingCombat and UnitAffectingCombat("player") == true
+        inCombat = UnitAffectingCombat and IsReadable(UnitAffectingCombat("player")) and UnitAffectingCombat("player") == true or false
         ApplyPosition()
         ScanAllBuffs()
         if not db.welcomed then
@@ -1236,44 +1453,62 @@ driver:SetScript("OnEvent", function(_, event, unit, castGUID, spellID)
         ScanAllBuffs()
         Render()
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
-        if unit ~= "player" or not IsFiniteNumber(spellID) then return end
-        local name = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellID)
-        local tex = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spellID)
+        if IsSecret(unit) or unit ~= "player" or not IsFiniteNumber(spellID) then return end
+        local okN, name = false, nil
+        local okT, tex = false, nil
+        if C_Spell and C_Spell.GetSpellName then
+            okN, name = pcall(C_Spell.GetSpellName, spellID)
+        end
+        if C_Spell and C_Spell.GetSpellTexture then
+            okT, tex = pcall(C_Spell.GetSpellTexture, spellID)
+        end
         local now = GetTime()
 
-        if spellID == 25780 or (IsReadableString(name) and rfNames[name]) then
+        if spellID == 25780 or (okN and IsReadableString(name) and rfNames[name]) then
             tracked.rf.active = true
             tracked.rf.expirationTime = now + 1800
-            if IsReadable(tex) and tex then tracked.rf.icon = tex end
-            if IsReadableString(name) and db then db.lastRFName = name end
+            if okT and IsReadable(tex) and tex then tracked.rf.icon = tex end
+            if okN and IsReadableString(name) and db then db.lastRFName = name end
             Render()
-        elseif IsReadableString(name) and auraNames[name] then
+        elseif auraSpellIDSet[spellID] or (okN and IsReadableString(name) and auraNames[name]) then
             tracked.aura.active = true
-            if IsReadable(tex) and tex then tracked.aura.icon = tex end
-            if db then db.lastAuraName = name end
+            if okT and IsReadable(tex) and tex then tracked.aura.icon = tex end
+            if okN and IsReadableString(name) and name ~= "" and db then db.lastAuraName = name end
             Render()
-        elseif IsReadableString(name) and IsBlessingName(name) then
+        elseif blessingSpellIDSet[spellID] or (okN and IsReadableString(name) and IsBlessingName(name)) then
             tracked.blessing.active = true
-            local dur = (name:find("superior") or name:find("Greater")) and 900 or 300
+            local isGreater = greaterBlessingSpellIDSet[spellID]
+                or (okN and IsReadableString(name) and (name:find("superior") or name:find("Greater")))
+            local dur = isGreater and 900 or 300
             tracked.blessing.duration = dur
             tracked.blessing.expirationTime = now + dur
-            if IsReadable(tex) and tex then tracked.blessing.icon = tex end
-            if db then db.lastBlessingName = name end
+            if okT and IsReadable(tex) and tex then tracked.blessing.icon = tex end
+            if okN and IsReadableString(name) and name ~= "" and db then db.lastBlessingName = name end
             Render()
         end
     elseif event == "UNIT_AURA" then
-        if unit == "player" then
+        if not IsSecret(unit) and unit == "player" then
             HandleAuraDelta(castGUID)
             ScanAllBuffs()
             Render()
         end
-    elseif event == "UPDATE_SHAPESHIFT_FORM" or event == "SPELLS_CHANGED" then
+    elseif event == "UPDATE_SHAPESHIFT_FORM" then
+        ScanAllBuffs()
+        Render()
+    elseif event == "SPELLS_CHANGED" then
         BuildSpellNames()
         DetectPaladinSpec()
         ScanAllBuffs()
         Render()
     elseif event == "PLAYER_REGEN_DISABLED" then
         inCombat = true
+        if unlocked then
+            unlocked = false
+            frame:StopMovingOrSizing()
+            frame:EnableMouse(false)
+            moverBg:Hide()
+            moverText:Hide()
+        end
         ScanAllBuffs()
         Render()
     elseif event == "PLAYER_REGEN_ENABLED" then

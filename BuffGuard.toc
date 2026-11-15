@@ -6,7 +6,17 @@
 ## Title-esMX: BuffGuard
 ## Notes-esMX: Recordatorio inteligente de bufos de Paladín para las 3 ramas de talentos (Furia justa en Protección, Aura y Bendición en Sagrado/Prot/Reprensión) con lanzamiento en 1 clic para WoW Forever.
 ## Author: moisesvalero
-## Version: 1.1.0
+## Version: 1.1.1
+## IconTexture: Interface\Icons\Spell_Holy_SealOfFury
+## Category: Combat
+## Category-esES: Combate
+## Category-esMX: Combate
+## X-Category: Paladin, Buffs & Debuffs, Combat
+## X-License: MIT
+## X-Website: https://github.com/moisesvalero/BuffGuard
 ## SavedVariables: BuffGuardDB
+## AddonCompartmentFunc: BuffGuard_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: BuffGuard_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: BuffGuard_OnAddonCompartmentLeave
 
 BuffGuard.lua

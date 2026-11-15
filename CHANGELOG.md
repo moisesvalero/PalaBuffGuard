@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.1.1] - 2026-11-15
+
+### 🇪🇸 Español (España)
+- **Endurecimiento para CurseForge y WoW Forever (`16001`):** Protección completa frente a `issecretvalue` en combate en `UNIT_AURA`, `C_UnitAuras`, `C_Traits` y eventos de unidad (`RegisterUnitEvent`).
+- **Validación de hechizos aprendidos (`C_SpellBook`):** El lanzamiento en 1 clic comprueba qué rangos y talentos conoce realmente tu Paladín a cada nivel y al cambiar de rama (`Aura de devoción` / `Bendición del poderío` a niveles bajos; reinicio automático de bufos exclusivos de rama al cambiar de talentos).
+- **Integración con el Cajón de AddOns (Addon Compartment):** Añadido icono y tooltip interactivo en el minimapa de WoW Forever (`Clic izquierdo` para mover, `Clic derecho` para ver estado de rama) y metadatos completos de CurseForge en `BuffGuard.toc`.
+- **Seguridad en combate:** Si entras en combate con el modo mover abierto (`/bguard`), el marco se bloquea automáticamente para no interceptar nunca el ratón.
+
+### 🇬🇧 English
+- **CurseForge & WoW Forever (`16001`) Hardening:** Full `issecretvalue` combat protection across `UNIT_AURA`, `C_UnitAuras`, `C_Traits`, and player-filtered unit events (`RegisterUnitEvent`).
+- **Learned-Spell Validation (`C_SpellBook`):** 1-click casting verifies which spells and talent buffs your Paladin actually knows at your current level and automatically resets spec-exclusive buffs when switching talent trees.
+- **Minimap Addon Compartment Support:** Added interactive WoW Forever Addon Compartment button and tooltip (`Left-click` to move, `Right-click` for spec status) plus complete CurseForge `.toc` metadata.
+- **Combat Safety Auto-Lock:** Automatically locks the mover frame upon entering combat (`PLAYER_REGEN_DISABLED`) so it never intercepts mouse camera control.
+
+---
+
 ## [1.1.0] - 2026-11-15
 
 ### 🇪🇸 Español (España)
