@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.1.2] - 2026-11-15
+
+### 🇪🇸 Español (España)
+- **Corrección crítica en Bosses y Mazmorras (`ENCOUNTER_START` / `C_RestrictedActions`):** Solucionado el fallo por el que en encuentros de jefe o mazmorras de WoW Forever (`16001`) saltaban todos los iconos como si faltasen los bufos cuando el cliente ocultaba `GetShapeshiftForm()`, `C_UnitAuras.GetAuraDataBySpellName` o marcaba `aura.expirationTime` como valor secreto (`issecretvalue`).
+- **Detección multi-API (`GetPlayerAuraBySpellID` + `GetAuraDataBySpellName` + `GetAuraDataByIndex`):** Si cualquiera de las APIs devuelve el aura del jugador, se reconoce inmediatamente como activa aunque sus campos internos de tiempo sean secretos.
+- **Protección frente a falsos positivos en combate:** Ignora eliminaciones ambiguas de `removedAuraInstanceIDs` durante refrescos en combate y bloquea alertas falsas mientras el motor de restricciones de jefe (`Enum.AddOnRestrictionType.Encounter`) oculta las auras.
+
+### 🇬🇧 English
+- **Critical Boss & Dungeon Fix (`ENCOUNTER_START` / `C_RestrictedActions`):** Fixed the issue where all icons could falsely pop up during boss encounters or dungeons in WoW Forever (`16001`) when the client restricted `GetShapeshiftForm()`, returned `nil` on `GetAuraDataBySpellName`, or marked `aura.expirationTime` as a secret value (`issecretvalue`).
+- **Multi-API Buff Lookup (`GetPlayerAuraBySpellID` + `GetAuraDataBySpellName` + `GetAuraDataByIndex`):** Any non-nil aura table returned for the player is immediately recognized as active even when internal timing fields are secret.
+- **Zero False Positives in Combat/Encounters:** Prevents mid-fight buff refreshes (`removedAuraInstanceIDs` with secret `addedAuras`) or restricted boss states (`Enum.AddOnRestrictionType.Encounter`) from triggering false missing-buff alerts.
+
+---
+
 ## [1.1.1] - 2026-11-15
 
 ### 🇪🇸 Español (España)

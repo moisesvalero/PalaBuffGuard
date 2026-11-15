@@ -6,7 +6,7 @@
 ## Title-esMX: PalaBuffGuard
 ## Notes-esMX: Recordatorio inteligente de bufos de Paladín para las 3 ramas de talentos (Furia justa en Protección, Aura y Bendición en Sagrado/Prot/Reprensión) con lanzamiento en 1 clic para WoW Forever.
 ## Author: moisesvalero
-## Version: 1.1.1
+## Version: 1.1.2
 ## IconTexture: Interface\Icons\Spell_Holy_SealOfFury
 ## Category: Combat
 ## Category-esES: Combate

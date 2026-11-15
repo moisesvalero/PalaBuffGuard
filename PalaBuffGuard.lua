@@ -15,6 +15,7 @@ end
 local db
 local isPaladin = true
 local inCombat = false
+local inEncounter = false
 local unlocked = false
 local previewUntil = 0
 local pollElapsed = 0
@@ -270,12 +271,15 @@ local resolvedSpells = {
     blessingSanctuary = (defaultLang == "es") and "Bendición de salvaguardia" or "Blessing of Sanctuary",
 }
 
--- Tracked runtime state (persists across restricted combat scans)
+-- Tracked runtime state (persists across restricted combat/encounter scans)
 local tracked = {
-    rf = { active = false, expirationTime = 0, duration = 1800, icon = DEFAULT_ICONS.rf, instanceID = nil },
-    aura = { active = false, fromForm = false, expirationTime = 0, duration = 0, icon = DEFAULT_ICONS.aura, instanceID = nil },
-    blessing = { active = false, expirationTime = 0, duration = 300, icon = DEFAULT_ICONS.blessing, instanceID = nil },
+    rf = { active = false, restricted = false, selfTimed = false, expirationTime = 0, duration = 1800, icon = DEFAULT_ICONS.rf, instanceID = nil },
+    aura = { active = false, restricted = false, fromForm = false, expirationTime = 0, duration = 0, icon = DEFAULT_ICONS.aura, instanceID = nil },
+    blessing = { active = false, restricted = false, selfTimed = false, expirationTime = 0, duration = 300, icon = DEFAULT_ICONS.blessing, instanceID = nil },
 }
+
+local rfSpellIDSet = {}
+for _, id in ipairs(RF_SPELL_IDS) do rfSpellIDSet[id] = true end
 
 local auraSpellIDSet = {}
 for _, id in ipairs(AURA_SPELL_IDS) do auraSpellIDSet[id] = true end
@@ -846,129 +850,245 @@ frame:SetScript("OnMouseUp", function(_, button)
     end
 end)
 
--- Query helper using C_UnitAuras (guards both the returned table and its fields against secret values)
-local function QuerySpellGroup(namesTable)
-    if not (C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName) then
-        return nil, true
+-- Detects whether WoW Forever (16001) is currently in a restricted Boss Encounter / ChallengeMode / PvP state
+local function IsEncounterRestricted()
+    if inEncounter then
+        return true
     end
-    local anyRestricted = false
-    for name in pairs(namesTable) do
-        local ok, aura = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", name, "HELPFUL")
-        if not ok or IsSecret(aura) then
-            anyRestricted = true
-        elseif type(aura) == "table" then
-            if IsSecret(aura.name) or IsSecret(aura.expirationTime) then
-                anyRestricted = true
-            else
-                return aura, false
+    if IsEncounterInProgress then
+        local ok, enc = pcall(IsEncounterInProgress)
+        if ok and (IsSecret(enc) or enc == true) then
+            return true
+        end
+    end
+    if UnitExists then
+        local ok, boss = pcall(UnitExists, "boss1")
+        if ok and (IsSecret(boss) or boss == true) then
+            return true
+        end
+    end
+    if C_RestrictedActions and C_RestrictedActions.GetAddOnRestrictionState and Enum and Enum.AddOnRestrictionType then
+        local T = Enum.AddOnRestrictionType
+        for _, rType in ipairs({ T.Encounter, T.ChallengeMode, T.PvPMatch }) do
+            if IsFiniteNumber(rType) then
+                local ok, state = pcall(C_RestrictedActions.GetAddOnRestrictionState, rType)
+                if ok and (IsSecret(state) or (IsFiniteNumber(state) and state ~= 0)) then
+                    return true
+                end
             end
         end
     end
-    return nil, anyRestricted
+    return false
+end
+
+-- Multi-method buff lookup for "player".
+-- CRITICAL for WoW Forever (16001): If GetPlayerAuraBySpellID or GetAuraDataBySpellName returns a non-nil aura table,
+-- the buff IS ACTIVE on the player even when individual fields (like aura.expirationTime or aura.name) are secret!
+local function FindPlayerBuff(spellIDList, spellIDSet, namesTable, isBlessingGroup)
+    if not C_UnitAuras then
+        return nil, true, false
+    end
+    local anyRestricted = false
+
+    -- 1. Query by Spell ID on player (most reliable in WoW Forever 16001)
+    if C_UnitAuras.GetPlayerAuraBySpellID then
+        for _, spellID in ipairs(spellIDList) do
+            local ok, aura = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
+            if not ok then
+                anyRestricted = true
+            elseif aura ~= nil then
+                return aura, false, true
+            end
+        end
+    elseif C_UnitAuras.GetUnitAuraBySpellID then
+        for _, spellID in ipairs(spellIDList) do
+            local ok, aura = pcall(C_UnitAuras.GetUnitAuraBySpellID, "player", spellID)
+            if not ok then
+                anyRestricted = true
+            elseif aura ~= nil then
+                return aura, false, true
+            end
+        end
+    end
+
+    -- 2. Query by localized / English spell name on player
+    if C_UnitAuras.GetAuraDataBySpellName then
+        for name in pairs(namesTable) do
+            local ok, aura = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", name, "HELPFUL")
+            if not ok then
+                anyRestricted = true
+            elseif aura ~= nil then
+                return aura, false, true
+            end
+        end
+    end
+
+    -- 3. Scan player HELPFUL buff slots 1..40 to catch rank/locale variants and detect secret buff slots
+    if C_UnitAuras.GetAuraDataByIndex then
+        for i = 1, 40 do
+            local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
+            if not ok or IsSecret(aura) then
+                anyRestricted = true
+                break
+            end
+            if aura == nil then
+                break
+            end
+            if type(aura) == "table" then
+                local sid = aura.spellId
+                local sname = aura.name
+                if IsSecret(sid) and IsSecret(sname) then
+                    anyRestricted = true
+                else
+                    if IsFiniteNumber(sid) and spellIDSet[sid] then
+                        return aura, false, true
+                    end
+                    if IsReadableString(sname) then
+                        if namesTable[sname] or (isBlessingGroup and IsBlessingName(sname)) then
+                            return aura, false, true
+                        end
+                    elseif IsSecret(sname) then
+                        anyRestricted = true
+                    end
+                end
+            end
+        end
+    end
+
+    return nil, anyRestricted, false
 end
 
 local function ScanAllBuffs()
     local now = GetTime()
+    local encounterRestricted = IsEncounterRestricted()
+    local combatActive = InCombat()
 
     -- If spec is still unknown at level >= 10 outside combat, try detecting once C_Traits is ready
-    if currentSpec == "none" and not InCombat() then
+    if currentSpec == "none" and not combatActive and not encounterRestricted then
         local lvl = UnitLevel and UnitLevel("player")
         if IsFiniteNumber(lvl) and lvl >= 10 then
             DetectPaladinSpec()
         end
     end
 
-    -- 1. Check Aura via Shapeshift Form (100% reliable in and out of combat) + buff fallback
-    local form = GetShapeshiftForm and GetShapeshiftForm() or 0
-    if IsFiniteNumber(form) and form > 0 then
+    -- 1. Check Aura via Shapeshift Form + buff fallback
+    local form = GetShapeshiftForm and GetShapeshiftForm()
+    local formID = GetShapeshiftFormID and GetShapeshiftFormID()
+    local formSecret = IsSecret(form) or IsSecret(formID)
+    if (IsFiniteNumber(form) and form > 0) or (IsFiniteNumber(formID) and formID > 0) then
         tracked.aura.active = true
+        tracked.aura.restricted = false
         tracked.aura.fromForm = true
-        local icon, _, _, spellID = GetShapeshiftFormInfo and GetShapeshiftFormInfo(form)
-        if IsReadable(icon) and icon then tracked.aura.icon = icon end
-        if IsFiniteNumber(spellID) and C_Spell and C_Spell.GetSpellName then
-            local ok, formName = pcall(C_Spell.GetSpellName, spellID)
-            if ok and IsReadableString(formName) and formName ~= "" and db then
-                db.lastAuraName = formName
+        if IsFiniteNumber(form) and form > 0 and GetShapeshiftFormInfo then
+            local okI, icon, _, _, spellID = pcall(GetShapeshiftFormInfo, form)
+            if okI and IsReadable(icon) and icon then tracked.aura.icon = icon end
+            if okI and IsFiniteNumber(spellID) and C_Spell and C_Spell.GetSpellName then
+                local okN, formName = pcall(C_Spell.GetSpellName, spellID)
+                if okN and IsReadableString(formName) and formName ~= "" and db then
+                    db.lastAuraName = formName
+                end
             end
         end
     else
-        local auraData, auraRestricted = QuerySpellGroup(auraNames)
-        if auraData then
+        local auraData, auraRestricted, auraFound = FindPlayerBuff(AURA_SPELL_IDS, auraSpellIDSet, auraNames, false)
+        if auraFound then
             tracked.aura.active = true
+            tracked.aura.restricted = false
             tracked.aura.fromForm = false
-            if IsReadable(auraData.icon) and auraData.icon then tracked.aura.icon = auraData.icon end
-        elseif tracked.aura.fromForm or not inCombat or not auraRestricted then
+            if not IsSecret(auraData) and type(auraData) == "table" then
+                if IsReadable(auraData.icon) and auraData.icon then tracked.aura.icon = auraData.icon end
+                if IsReadableString(auraData.name) and auraData.name ~= "" and db then
+                    db.lastAuraName = auraData.name
+                end
+            end
+        elseif formSecret or auraRestricted or encounterRestricted then
+            -- Suppress unverified alerts when form/auras are secret or during a boss encounter
+            tracked.aura.restricted = true
+        elseif combatActive then
+            -- In normal combat without secret values: preserve active state (never falsely flip true -> false),
+            -- while allowing already-missing buffs (active == false) to display the red combat alert
+            tracked.aura.restricted = false
+        else
             tracked.aura.active = false
+            tracked.aura.restricted = false
             tracked.aura.fromForm = false
         end
     end
 
     -- 2. Check Righteous Fury (Furia justa / recta)
-    local rfData, rfRestricted = QuerySpellGroup(rfNames)
-    if rfData then
+    local rfData, rfRestricted, rfFound = FindPlayerBuff(RF_SPELL_IDS, rfSpellIDSet, rfNames, false)
+    if rfFound then
         tracked.rf.active = true
-        if IsReadable(rfData.icon) and rfData.icon then tracked.rf.icon = rfData.icon end
-        if IsReadableString(rfData.name) and rfData.name ~= "" and db then
-            db.lastRFName = rfData.name
-        end
-        if IsFiniteNumber(rfData.expirationTime) and rfData.expirationTime > 0 then
-            tracked.rf.expirationTime = rfData.expirationTime
-        end
-        if IsFiniteNumber(rfData.auraInstanceID) then
-            tracked.rf.instanceID = rfData.auraInstanceID
-        end
-    elseif not inCombat then
-        if not rfRestricted then
-            tracked.rf.active = false
+        tracked.rf.restricted = false
+        if not IsSecret(rfData) and type(rfData) == "table" then
+            if IsReadable(rfData.icon) and rfData.icon then tracked.rf.icon = rfData.icon end
+            if IsReadableString(rfData.name) and rfData.name ~= "" and db then
+                db.lastRFName = rfData.name
+            end
+            if IsFiniteNumber(rfData.expirationTime) and rfData.expirationTime > 0 then
+                tracked.rf.expirationTime = rfData.expirationTime
+            else
+                tracked.rf.expirationTime = 0
+            end
+            if IsFiniteNumber(rfData.auraInstanceID) then
+                tracked.rf.instanceID = rfData.auraInstanceID
+            end
+        else
             tracked.rf.expirationTime = 0
-            tracked.rf.instanceID = nil
         end
+    elseif rfRestricted or encounterRestricted then
+        -- Suppress unverified alerts when auras are secret or during a boss encounter
+        tracked.rf.restricted = true
+    elseif combatActive then
+        -- Preserve active state across normal combat when C_UnitAuras returns nil
+        tracked.rf.restricted = false
     else
-        if tracked.rf.active and tracked.rf.expirationTime > 0 and tracked.rf.expirationTime <= now then
-            tracked.rf.active = false
-        end
+        tracked.rf.active = false
+        tracked.rf.restricted = false
+        tracked.rf.selfTimed = false
+        tracked.rf.expirationTime = 0
+        tracked.rf.instanceID = nil
     end
 
     -- 3. Check Blessing (Bendición)
-    local blessData, blessRestricted = QuerySpellGroup(blessingNames)
-    if not blessData and not inCombat and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-        for i = 1, 40 do
-            local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
-            if not ok or IsSecret(aura) or type(aura) ~= "table" then break end
-            if IsBlessingName(aura.name) then
-                blessData = aura
-                break
+    local blessData, blessRestricted, blessFound = FindPlayerBuff(BLESSING_SPELL_IDS, blessingSpellIDSet, blessingNames, true)
+    if blessFound then
+        tracked.blessing.active = true
+        tracked.blessing.restricted = false
+        if not IsSecret(blessData) and type(blessData) == "table" then
+            if IsReadable(blessData.icon) and blessData.icon then
+                tracked.blessing.icon = blessData.icon
+            end
+            if IsReadableString(blessData.name) and blessData.name ~= "" and db then
+                db.lastBlessingName = blessData.name
+            end
+            if IsFiniteNumber(blessData.expirationTime) and blessData.expirationTime > 0 then
+                tracked.blessing.expirationTime = blessData.expirationTime
+                tracked.blessing.selfTimed = false
+            elseif IsSecret(blessData.expirationTime) then
+                if not tracked.blessing.selfTimed or tracked.blessing.expirationTime <= now then
+                    tracked.blessing.expirationTime = 0
+                end
+            end
+            if IsFiniteNumber(blessData.duration) and blessData.duration > 0 then
+                tracked.blessing.duration = blessData.duration
+            end
+            if IsFiniteNumber(blessData.auraInstanceID) then
+                tracked.blessing.instanceID = blessData.auraInstanceID
             end
         end
-    end
-
-    if blessData then
-        tracked.blessing.active = true
-        if IsReadable(blessData.icon) and blessData.icon then
-            tracked.blessing.icon = blessData.icon
-        end
-        if IsReadableString(blessData.name) and blessData.name ~= "" and db then
-            db.lastBlessingName = blessData.name
-        end
-        if IsFiniteNumber(blessData.expirationTime) and blessData.expirationTime > 0 then
-            tracked.blessing.expirationTime = blessData.expirationTime
-        end
-        if IsFiniteNumber(blessData.duration) and blessData.duration > 0 then
-            tracked.blessing.duration = blessData.duration
-        end
-        if IsFiniteNumber(blessData.auraInstanceID) then
-            tracked.blessing.instanceID = blessData.auraInstanceID
-        end
-    elseif not inCombat then
-        if not blessRestricted then
-            tracked.blessing.active = false
-            tracked.blessing.expirationTime = 0
-            tracked.blessing.instanceID = nil
-        end
+    elseif blessRestricted or encounterRestricted then
+        -- Suppress unverified alerts when auras are secret or during a boss encounter
+        tracked.blessing.restricted = true
+    elseif combatActive then
+        -- Preserve active state across normal combat when C_UnitAuras returns nil
+        tracked.blessing.restricted = false
     else
-        if tracked.blessing.active and tracked.blessing.expirationTime > 0 and tracked.blessing.expirationTime <= now then
-            tracked.blessing.active = false
-        end
+        tracked.blessing.active = false
+        tracked.blessing.restricted = false
+        tracked.blessing.selfTimed = false
+        tracked.blessing.expirationTime = 0
+        tracked.blessing.instanceID = nil
     end
 end
 
@@ -1029,7 +1149,7 @@ Render = function()
     -- 1. Righteous Fury (only tracked in Protection talents when rfMode == "auto", or always if rfMode == "on")
     if ShouldTrackRF() or unlocked then
         badges.rf.icon:SetTexture(tracked.rf.icon or DEFAULT_ICONS.rf)
-        if isPreview or not tracked.rf.active then
+        if isPreview or (not tracked.rf.active and not tracked.rf.restricted) then
             StyleBadgeState(badges.rf, "missing", 0)
             activeBadges[#activeBadges + 1] = badges.rf
         else
@@ -1046,7 +1166,7 @@ Render = function()
     -- 2. Aura (all 3 specs: Holy, Protection, Retribution)
     if db.trackAura ~= false then
         badges.aura.icon:SetTexture(tracked.aura.icon or DEFAULT_ICONS.aura)
-        if isPreview or not tracked.aura.active then
+        if isPreview or (not tracked.aura.active and not tracked.aura.restricted) then
             StyleBadgeState(badges.aura, "missing", 0)
             activeBadges[#activeBadges + 1] = badges.aura
         else
@@ -1062,10 +1182,10 @@ Render = function()
     if db.trackBlessing ~= false then
         badges.blessing.icon:SetTexture(tracked.blessing.icon or DEFAULT_ICONS.blessing)
         local rem = (tracked.blessing.expirationTime or 0) - now
-        if isPreview or not tracked.blessing.active then
+        if isPreview or (not tracked.blessing.active and not tracked.blessing.restricted) then
             StyleBadgeState(badges.blessing, "missing", 0)
             activeBadges[#activeBadges + 1] = badges.blessing
-        elseif tracked.blessing.expirationTime > 0 and rem > 0 and rem <= (db.blessingWarn or 30) then
+        elseif not tracked.blessing.restricted and tracked.blessing.expirationTime > 0 and rem > 0 and rem <= (db.blessingWarn or 30) then
             StyleBadgeState(badges.blessing, "expiring", rem)
             activeBadges[#activeBadges + 1] = badges.blessing
         else
@@ -1114,47 +1234,41 @@ driver:SetScript("OnUpdate", function(_, elapsed)
     end
 end)
 
--- Handle UNIT_AURA delta updates for combat responsiveness
+-- Handle UNIT_AURA delta updates for immediate buff gain recognition
+-- Note: We intentionally do NOT mark buffs as missing via removedAuraInstanceIDs in combat/encounters,
+-- because when a buff is refreshed in combat, removedAuraInstanceIDs is readable while the replacement in addedAuras is secret.
 local function HandleAuraDelta(updateInfo)
     if IsSecret(updateInfo) or type(updateInfo) ~= "table" then return end
     local now = GetTime()
 
-    local removed = updateInfo.removedAuraInstanceIDs
-    if not IsSecret(removed) and type(removed) == "table" then
-        for _, id in ipairs(removed) do
-            if IsFiniteNumber(id) then
-                if tracked.rf.instanceID and id == tracked.rf.instanceID then
-                    tracked.rf.active = false
-                    tracked.rf.instanceID = nil
-                end
-                if tracked.blessing.instanceID and id == tracked.blessing.instanceID then
-                    tracked.blessing.active = false
-                    tracked.blessing.instanceID = nil
-                end
-            end
-        end
-    end
-
     local added = updateInfo.addedAuras
     if not IsSecret(added) and type(added) == "table" then
         for _, aura in ipairs(added) do
-            if not IsSecret(aura) and type(aura) == "table" and IsReadableString(aura.name) then
-                if rfNames[aura.name] then
+            if not IsSecret(aura) and type(aura) == "table" then
+                local sid = IsFiniteNumber(aura.spellId) and aura.spellId or nil
+                local sname = IsReadableString(aura.name) and aura.name or nil
+                if (sid and rfSpellIDSet[sid]) or (sname and rfNames[sname]) then
                     tracked.rf.active = true
-                    tracked.rf.expirationTime = IsFiniteNumber(aura.expirationTime) and aura.expirationTime or (now + 1800)
+                    tracked.rf.restricted = false
+                    tracked.rf.expirationTime = IsFiniteNumber(aura.expirationTime) and aura.expirationTime or 0
                     tracked.rf.instanceID = IsFiniteNumber(aura.auraInstanceID) and aura.auraInstanceID or nil
                     if IsReadable(aura.icon) and aura.icon then tracked.rf.icon = aura.icon end
-                    if db then db.lastRFName = aura.name end
-                elseif auraNames[aura.name] then
+                    if sname and db then db.lastRFName = sname end
+                elseif (sid and auraSpellIDSet[sid]) or (sname and auraNames[sname]) then
                     tracked.aura.active = true
+                    tracked.aura.restricted = false
                     if IsReadable(aura.icon) and aura.icon then tracked.aura.icon = aura.icon end
-                    if db then db.lastAuraName = aura.name end
-                elseif IsBlessingName(aura.name) then
+                    if sname and db then db.lastAuraName = sname end
+                elseif (sid and blessingSpellIDSet[sid]) or (sname and IsBlessingName(sname)) then
                     tracked.blessing.active = true
-                    tracked.blessing.expirationTime = IsFiniteNumber(aura.expirationTime) and aura.expirationTime or (now + 300)
+                    tracked.blessing.restricted = false
+                    if IsFiniteNumber(aura.expirationTime) and aura.expirationTime > 0 then
+                        tracked.blessing.expirationTime = aura.expirationTime
+                        tracked.blessing.selfTimed = false
+                    end
                     tracked.blessing.instanceID = IsFiniteNumber(aura.auraInstanceID) and aura.auraInstanceID or nil
                     if IsReadable(aura.icon) and aura.icon then tracked.blessing.icon = aura.icon end
-                    if db then db.lastBlessingName = aura.name end
+                    if sname and db then db.lastBlessingName = sname end
                 end
             end
         end
@@ -1165,17 +1279,22 @@ local function HandleAuraDelta(updateInfo)
         for _, id in ipairs(updated) do
             if IsFiniteNumber(id) then
                 local ok, aura = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, "player", id)
-                if ok and not IsSecret(aura) and type(aura) == "table" and IsReadableString(aura.name) then
-                    if rfNames[aura.name] then
+                if ok and not IsSecret(aura) and type(aura) == "table" then
+                    local sid = IsFiniteNumber(aura.spellId) and aura.spellId or nil
+                    local sname = IsReadableString(aura.name) and aura.name or nil
+                    if (sid and rfSpellIDSet[sid]) or (sname and rfNames[sname]) then
                         tracked.rf.active = true
+                        tracked.rf.restricted = false
                         if IsFiniteNumber(aura.expirationTime) and aura.expirationTime > 0 then
                             tracked.rf.expirationTime = aura.expirationTime
                         end
                         tracked.rf.instanceID = id
-                    elseif IsBlessingName(aura.name) then
+                    elseif (sid and blessingSpellIDSet[sid]) or (sname and IsBlessingName(sname)) then
                         tracked.blessing.active = true
+                        tracked.blessing.restricted = false
                         if IsFiniteNumber(aura.expirationTime) and aura.expirationTime > 0 then
                             tracked.blessing.expirationTime = aura.expirationTime
+                            tracked.blessing.selfTimed = false
                         end
                         tracked.blessing.instanceID = id
                     end
@@ -1431,11 +1550,15 @@ driver:SetScript("OnEvent", function(_, event, unit, castGUID, spellID)
         driver:RegisterEvent("PLAYER_ALIVE")
         driver:RegisterEvent("PLAYER_UNGHOST")
         driver:RegisterEvent("SPELLS_CHANGED")
+        pcall(driver.RegisterEvent, driver, "ENCOUNTER_START")
+        pcall(driver.RegisterEvent, driver, "ENCOUNTER_END")
+        pcall(driver.RegisterEvent, driver, "ADDON_RESTRICTION_STATE_CHANGED")
         for _, tev in ipairs(TALENT_EVENTS) do
             pcall(driver.RegisterEvent, driver, tev)
         end
 
         inCombat = UnitAffectingCombat and IsReadable(UnitAffectingCombat("player")) and UnitAffectingCombat("player") == true or false
+        inEncounter = IsEncounterInProgress and IsReadable(IsEncounterInProgress()) and IsEncounterInProgress() == true or false
         ScanAllBuffs()
         Render()
     elseif event == "PLAYER_ENTERING_WORLD" then
@@ -1443,6 +1566,7 @@ driver:SetScript("OnEvent", function(_, event, unit, castGUID, spellID)
         BuildSpellNames()
         DetectPaladinSpec()
         inCombat = UnitAffectingCombat and IsReadable(UnitAffectingCombat("player")) and UnitAffectingCombat("player") == true or false
+        inEncounter = IsEncounterInProgress and IsReadable(IsEncounterInProgress()) and IsEncounterInProgress() == true or false
         ApplyPosition()
         ScanAllBuffs()
         if not db.welcomed then
@@ -1450,6 +1574,16 @@ driver:SetScript("OnEvent", function(_, event, unit, castGUID, spellID)
             previewUntil = GetTime() + 4
             Message(L("MSG_WELCOME"))
         end
+        Render()
+    elseif event == "ENCOUNTER_START" then
+        inEncounter = true
+        ScanAllBuffs()
+        Render()
+    elseif event == "ENCOUNTER_END" or event == "ADDON_RESTRICTION_STATE_CHANGED" then
+        if event == "ENCOUNTER_END" then
+            inEncounter = false
+        end
+        ScanAllBuffs()
         Render()
     elseif event == "TRAIT_CONFIG_UPDATED" or event == "PLAYER_TALENT_UPDATE"
         or event == "CHARACTER_POINTS_CHANGED" or event == "ACTIVE_TALENT_GROUP_CHANGED"
@@ -1471,17 +1605,22 @@ driver:SetScript("OnEvent", function(_, event, unit, castGUID, spellID)
 
         if spellID == 25780 or (okN and IsReadableString(name) and rfNames[name]) then
             tracked.rf.active = true
+            tracked.rf.restricted = false
+            tracked.rf.selfTimed = true
             tracked.rf.expirationTime = now + 1800
             if okT and IsReadable(tex) and tex then tracked.rf.icon = tex end
             if okN and IsReadableString(name) and db then db.lastRFName = name end
             Render()
         elseif auraSpellIDSet[spellID] or (okN and IsReadableString(name) and auraNames[name]) then
             tracked.aura.active = true
+            tracked.aura.restricted = false
             if okT and IsReadable(tex) and tex then tracked.aura.icon = tex end
             if okN and IsReadableString(name) and name ~= "" and db then db.lastAuraName = name end
             Render()
         elseif blessingSpellIDSet[spellID] or (okN and IsReadableString(name) and IsBlessingName(name)) then
             tracked.blessing.active = true
+            tracked.blessing.restricted = false
+            tracked.blessing.selfTimed = true
             local isGreater = greaterBlessingSpellIDSet[spellID]
                 or (okN and IsReadableString(name) and (name:find("superior") or name:find("Greater")))
             local dur = isGreater and 900 or 300
