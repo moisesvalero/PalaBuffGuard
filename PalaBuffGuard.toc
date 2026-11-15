@@ -1,9 +1,9 @@
 ## Interface: 16001
-## Title: BuffGuard
+## Title: PalaBuffGuard
 ## Notes: Smart Paladin buff reminder for all 3 talent specs (Righteous Fury in Protection, Aura & Blessing in Holy/Prot/Ret) with 1-click casting for WoW Forever.
-## Title-esES: BuffGuard
+## Title-esES: PalaBuffGuard
 ## Notes-esES: Recordatorio inteligente de bufos de Paladín para las 3 ramas de talentos (Furia justa en Protección, Aura y Bendición en Sagrado/Prot/Reprensión) con lanzamiento en 1 clic para WoW Forever.
-## Title-esMX: BuffGuard
+## Title-esMX: PalaBuffGuard
 ## Notes-esMX: Recordatorio inteligente de bufos de Paladín para las 3 ramas de talentos (Furia justa en Protección, Aura y Bendición en Sagrado/Prot/Reprensión) con lanzamiento en 1 clic para WoW Forever.
 ## Author: moisesvalero
 ## Version: 1.1.1
@@ -13,10 +13,10 @@
 ## Category-esMX: Combate
 ## X-Category: Paladin, Buffs & Debuffs, Combat
 ## X-License: MIT
-## X-Website: https://github.com/moisesvalero/BuffGuard
-## SavedVariables: BuffGuardDB
-## AddonCompartmentFunc: BuffGuard_OnAddonCompartmentClick
-## AddonCompartmentFuncOnEnter: BuffGuard_OnAddonCompartmentEnter
-## AddonCompartmentFuncOnLeave: BuffGuard_OnAddonCompartmentLeave
+## X-Website: https://github.com/moisesvalero/PalaBuffGuard
+## SavedVariables: PalaBuffGuardDB
+## AddonCompartmentFunc: PalaBuffGuard_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: PalaBuffGuard_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: PalaBuffGuard_OnAddonCompartmentLeave
 
-BuffGuard.lua
+PalaBuffGuard.lua

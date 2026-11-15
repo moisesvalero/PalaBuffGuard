@@ -1,4 +1,4 @@
-# 🛡️ BuffGuard
+# 🛡️ PalaBuffGuard
 
 **🇪🇸 Recordatorio inteligente y lanzamiento en 1 clic de los bufos del Paladín (Sagrado, Protección y Reprensión) para World of Warcraft: Forever (`1.60.1`).**  
 **🇬🇧 Smart minimalist reminder & 1-click buffing for all 3 Paladin talent trees (Holy, Protection, and Retribution) in World of Warcraft: Forever (`1.60.1`).**
@@ -8,22 +8,22 @@
   <a href="#-english">🇬🇧 English</a>
 </p>
 
-![BuffGuard HUD Preview](docs/preview.png)
+![PalaBuffGuard HUD Preview](docs/preview.png)
 
 ---
 
 ## 🇪🇸 Español (España)
 
-> **Cero ruido visual:** **BuffGuard** permanece **100 % invisible** mientras llevas tus bufos activos. Solo aparece en pantalla cuando te falta un bufo esencial de tu rama de talentos o cuando a tu bendición le quedan **≤ 30 segundos**.
+> **Cero ruido visual:** **PalaBuffGuard** permanece **100 % invisible** mientras llevas tus bufos activos. Solo aparece en pantalla cuando te falta un bufo esencial de tu rama de talentos o cuando a tu bendición le quedan **≤ 30 segundos**.
 
 ### ✨ Características principales (WoW Forever `1.60.1`)
 
 * **Adaptación automática a las 3 ramas de talentos (`C_Traits`):**
-  * **BuffGuard** lee en tiempo real el árbol de talentos de **WoW Forever (`Interface: 16001`)** mediante `C_ClassTalents` y `C_Traits` (`Sagrado` / `Protección` / `Reprensión`).
+  * **PalaBuffGuard** lee en tiempo real el árbol de talentos de **WoW Forever (`Interface: 16001`)** mediante `C_ClassTalents` y `C_Traits` (`Sagrado` / `Protección` / `Reprensión`).
   * **Furia justa inteligente:** En modo automático (`auto`, por defecto), **solo te avisa de *Furia justa* si estás en talentos de Protección**. Si juegas en **Reprensión** o **Sagrado** (o aún no tienes talentos de Protección), no te molestará pidiéndote *Furia justa*.
   * **Aura y Bendición en las 3 ramas:** Vigila que siempre lleves un **Aura** y una **Bendición** activas sin importar tu especialización, mostrando una **cuenta atrás** cuando a tu bendición le quedan 30 segundos o menos.
 * **Lanzamiento en 1 clic adaptado a tu rama (fuera de combate):**
-  * **Clic izquierdo:** Lanza a rango máximo el último bufo que hayas usado (o el recomendado según tu rama actual) directamente sobre ti (`[@player]`) sin perder tu objetivo enemigo.
+  * **Clic izquierdo:** Lanza a rango máximo el último bufo que hayas usado (o el recomendado según tu rama actual y hechizos aprendidos) directamente sobre ti (`[@player]`) sin perder tu objetivo enemigo.
   * **Clic derecho:** Alterna al bufo secundario de tu rama:
     * **Protección:** *Aura de devoción* ⇄ *Aura de represalia* | *Bendición de salvaguardia* (o *Poderío*) ⇄ *Sabiduría*.
     * **Reprensión:** *Aura de santidad* (o *Represalia*) ⇄ *Aura de devoción* | *Bendición del poderío* ⇄ *Sabiduría*.
@@ -36,40 +36,40 @@
 ### 📦 Instalación
 
 1. Descarga la última versión desde [Releases](../../releases) o clona este repositorio.
-2. Copia la carpeta **`BuffGuard`** dentro del directorio de AddOns de tu cliente de **WoW Forever**:
+2. Copia la carpeta **`PalaBuffGuard`** dentro del directorio de AddOns de tu cliente de **WoW Forever**:
    ```text
-   World of Warcraft/_forever_/Interface/AddOns/BuffGuard/
+   World of Warcraft/_forever_/Interface/AddOns/PalaBuffGuard/
    ```
-3. Asegúrate de que `BuffGuard.toc` y `BuffGuard.lua` estén directamente dentro de `Interface/AddOns/BuffGuard/`.
+3. Asegúrate de que `PalaBuffGuard.toc` y `PalaBuffGuard.lua` estén directamente dentro de `Interface/AddOns/PalaBuffGuard/`.
 4. Reinicia el juego o escribe `/reload`.
 
 ### 🎮 Comandos en el juego (`ES`)
 
-Puedes usar **`/bguard`** o **`/buffguard`** (también incluye `/furia` y `/fa` como alias):
+Puedes usar **`/pbg`** o **`/palabuffguard`** (también incluye `/bguard`, `/buffguard` y `/furia` como alias):
 
 | Comando | Descripción |
 | :--- | :--- |
-| `/bguard` o `/bguard mover` | Desbloquea/bloquea los iconos para arrastrarlos por la pantalla (clic derecho para bloquear). |
-| `/bguard status` | Muestra en el chat tu rama de talentos detectada (`Sagrado`, `Protección` o `Reprensión`), puntos (`X/Y/Z`) y estado de *Furia justa*. |
-| `/bguard rf [auto\|on\|off]` | Cambia el aviso de **Furia justa**: `auto` (solo en Protección, por defecto), `on` (forzar siempre) u `off` (desactivar). |
-| `/bguard aura` | Activa o desactiva el aviso de **Aura**. |
-| `/bguard bendicion` | Activa o desactiva el aviso de **Bendición**. |
-| `/bguard scale <0.4 - 2.0>` | Cambia el tamaño de los iconos (por defecto `0.85`). Ejemplo: `/bguard scale 1.0`. |
-| `/bguard texto` | Muestra u oculta los textos inferiores (`FURIA`, `AURA`, `BENDICIÓN`). |
-| `/bguard combate` | Alterna entre avisar **siempre** o **solo dentro de combate**. |
-| `/bguard lang [es\|en]` | Cambia el idioma del addon entre **Español (`esES`)** e **Inglés (`enUS`)**. |
-| `/bguard reset` | Restablece la posición, escala y opciones por defecto. |
+| `/pbg` o `/pbg mover` | Desbloquea/bloquea los iconos para arrastrarlos por la pantalla (clic derecho para bloquear). |
+| `/pbg status` | Muestra en el chat tu rama de talentos detectada (`Sagrado`, `Protección` o `Reprensión`), puntos (`X/Y/Z`) y estado de *Furia justa*. |
+| `/pbg rf [auto\|on\|off]` | Cambia el aviso de **Furia justa**: `auto` (solo en Protección, por defecto), `on` (forzar siempre) u `off` (desactivar). |
+| `/pbg aura` | Activa o desactiva el aviso de **Aura**. |
+| `/pbg bendicion` | Activa o desactiva el aviso de **Bendición**. |
+| `/pbg scale <0.4 - 2.0>` | Cambia el tamaño de los iconos (por defecto `0.85`). Ejemplo: `/pbg scale 1.0`. |
+| `/pbg texto` | Muestra u oculta los textos inferiores (`FURIA`, `AURA`, `BENDICIÓN`). |
+| `/pbg combate` | Alterna entre avisar **siempre** o **solo dentro de combate**. |
+| `/pbg lang [es\|en]` | Cambia el idioma del addon entre **Español (`esES`)** e **Inglés (`enUS`)**. |
+| `/pbg reset` | Restablece la posición, escala y opciones por defecto. |
 
 ---
 
 ## 🇬🇧 English
 
-> **Zero visual clutter:** **BuffGuard** stays **100% invisible** while your buffs are active. It only appears on screen when an essential buff for your talent spec is missing or when your blessing has **≤ 30 seconds** remaining.
+> **Zero visual clutter:** **PalaBuffGuard** stays **100% invisible** while your buffs are active. It only appears on screen when an essential buff for your talent spec is missing or when your blessing has **≤ 30 seconds** remaining.
 
 ### ✨ Key Features (WoW Forever `1.60.1`)
 
 * **Automatic 3-Spec Talent Detection (`C_Traits`):**
-  * **BuffGuard** reads **WoW Forever's (`Interface: 16001`)** talent tree in real time via `C_ClassTalents` and `C_Traits` (`Holy` / `Protection` / `Retribution`).
+  * **PalaBuffGuard** reads **WoW Forever's (`Interface: 16001`)** talent tree in real time via `C_ClassTalents` and `C_Traits` (`Holy` / `Protection` / `Retribution`).
   * **Smart Righteous Fury:** In automatic mode (`auto`, default), **it only alerts for *Righteous Fury* when you are in Protection talents**. If you are playing **Retribution** or **Holy** (or have no Protection talents spent), it will never nag you about *Righteous Fury*.
   * **Aura & Blessing across all 3 specs:** Monitors your active **Aura** and **Blessing** in every specialization, displaying a live **countdown timer** when your blessing has 30 seconds or less remaining.
 * **Spec-Aware 1-Click Buffing (out of combat):**
@@ -86,38 +86,38 @@ Puedes usar **`/bguard`** o **`/buffguard`** (también incluye `/furia` y `/fa` 
 ### 📦 Installation
 
 1. Download the latest release from [Releases](../../releases) or clone this repository.
-2. Copy the **`BuffGuard`** folder into your **WoW Forever** AddOns directory:
+2. Copy the **`PalaBuffGuard`** folder into your **WoW Forever** AddOns directory:
    ```text
-   World of Warcraft/_forever_/Interface/AddOns/BuffGuard/
+   World of Warcraft/_forever_/Interface/AddOns/PalaBuffGuard/
    ```
-3. Ensure `BuffGuard.toc` and `BuffGuard.lua` sit directly inside `Interface/AddOns/BuffGuard/`.
+3. Ensure `PalaBuffGuard.toc` and `PalaBuffGuard.lua` sit directly inside `Interface/AddOns/PalaBuffGuard/`.
 4. Restart the game or type `/reload`.
 
 ### 🎮 In-Game Commands (`EN`)
 
-Use **`/bguard`** or **`/buffguard`** (`/furia` and `/fa` also work as aliases):
+Use **`/pbg`** or **`/palabuffguard`** (`/bguard`, `/buffguard`, and `/furia` also work as aliases):
 
 | Command | Description |
 | :--- | :--- |
-| `/bguard` or `/bguard move` | Unlocks/locks the icons so you can drag them anywhere on screen (right-click to lock). |
-| `/bguard status` | Prints your detected talent spec (`Holy`, `Protection`, or `Retribution`), points (`X/Y/Z`), and *Righteous Fury* tracking state. |
-| `/bguard rf [auto\|on\|off]` | Sets **Righteous Fury** tracking mode: `auto` (Protection only, default), `on` (always force), or `off` (disable). |
-| `/bguard aura` | Toggles the **Aura** reminder on or off. |
-| `/bguard blessing` | Toggles the **Blessing** reminder on or off. |
-| `/bguard scale <0.4 - 2.0>` | Adjusts icon scale (default `0.85`). Example: `/bguard scale 1.0`. |
-| `/bguard text` | Shows or hides the bottom labels (`FURY`, `AURA`, `BLESSING`). |
-| `/bguard combat` | Toggles between alerting **always** or **in combat only**. |
-| `/bguard lang [en\|es]` | Switches addon language between **English (`enUS`)** and **Spanish (`esES`)**. |
-| `/bguard reset` | Resets position, scale, and settings to defaults. |
+| `/pbg` or `/pbg move` | Unlocks/locks the icons so you can drag them anywhere on screen (right-click to lock). |
+| `/pbg status` | Prints your detected talent spec (`Holy`, `Protection`, or `Retribution`), points (`X/Y/Z`), and *Righteous Fury* tracking state. |
+| `/pbg rf [auto\|on\|off]` | Sets **Righteous Fury** tracking mode: `auto` (Protection only, default), `on` (always force), or `off` (disable). |
+| `/pbg aura` | Toggles the **Aura** reminder on or off. |
+| `/pbg blessing` | Toggles the **Blessing** reminder on or off. |
+| `/pbg scale <0.4 - 2.0>` | Adjusts icon scale (default `0.85`). Example: `/pbg scale 1.0`. |
+| `/pbg text` | Shows or hides the bottom labels (`FURY`, `AURA`, `BLESSING`). |
+| `/pbg combat` | Toggles between alerting **always** or **in combat only**. |
+| `/pbg lang [en\|es]` | Switches addon language between **English (`enUS`)** and **Spanish (`esES`)**. |
+| `/pbg reset` | Resets position, scale, and settings to defaults. |
 
 ---
 
 ## 🛠️ Estructura / Project Structure
 
 ```text
-BuffGuard/
-├── BuffGuard.toc       # WoW Forever (Interface 16001) metadata (EN / esES)
-├── BuffGuard.lua       # Core addon, C_Traits 3-spec detector & secure HUD
+PalaBuffGuard/
+├── PalaBuffGuard.toc   # WoW Forever (Interface 16001) metadata (EN / esES)
+├── PalaBuffGuard.lua   # Core addon, C_Traits 3-spec detector & secure HUD
 ├── docs/
 │   └── preview.png     # HUD showcase preview
 ├── CHANGELOG.md        # Bilingual version history (ES / EN)

@@ -1,12 +1,12 @@
 local addonName = ...
 
 -- Always-visible invisible driver frame so OnUpdate continues running while the visual HUD is hidden
-local driver = CreateFrame("Frame", "BuffGuardDriver", UIParent)
-local frame = CreateFrame("Frame", "BuffGuardFrame", UIParent)
+local driver = CreateFrame("Frame", "PalaBuffGuardDriver", UIParent)
+local frame = CreateFrame("Frame", "PalaBuffGuardFrame", UIParent)
 frame:Hide()
 
 -- C++ state-driven secure parent: automatically hides click overlays in combat so they never block camera turning
-local secureHolder = CreateFrame("Frame", "BuffGuardSecureHolder", UIParent, "SecureHandlerStateTemplate")
+local secureHolder = CreateFrame("Frame", "PalaBuffGuardSecureHolder", UIParent, "SecureHandlerStateTemplate")
 secureHolder:SetAllPoints(UIParent)
 if RegisterStateDriver then
     pcall(RegisterStateDriver, secureHolder, "visibility", "[combat] hide; show")
@@ -67,10 +67,10 @@ local L_TABLE = {
         LABEL_BLESSING = "BENDICIÓN",
         MOVER_HINT = "|cffffd36aArrastra para mover|r |cffaaaaaa(Clic derecho para bloquear)|r",
         MSG_COMBAT_LOCK = "Sal de combate un momento para mover los iconos.",
-        MSG_MOVE_ON = "Modo mover |cff00ff00ACTIVO|r. Arrastra los iconos y haz |cffffd36aclic derecho|r (o escribe /bguard) para bloquear.",
-        MSG_MOVE_OFF = "Posición |cffffd36abloqueada|r. Escribe |cffffd36a/bguard|r si quieres volver a moverlo.",
+        MSG_MOVE_ON = "Modo mover |cff00ff00ACTIVO|r. Arrastra los iconos y haz |cffffd36aclic derecho|r (o escribe /pbg) para bloquear.",
+        MSG_MOVE_OFF = "Posición |cffffd36abloqueada|r. Escribe |cffffd36a/pbg|r si quieres volver a moverlo.",
         MSG_SCALE_SET = "Tamaño ajustado a |cffffd36a%s|r.",
-        MSG_SCALE_USAGE = "Usa: |cffffd36a/bguard scale 0.85|r (entre 0.4 y 2.0)",
+        MSG_SCALE_USAGE = "Usa: |cffffd36a/pbg scale 0.85|r (entre 0.4 y 2.0)",
         MSG_LABELS_ON = "Textos inferiores |cff00ff00activados|r.",
         MSG_LABELS_OFF = "Textos inferiores |cffff5555ocultos|r.",
         MSG_COMBAT_ONLY_ON = "Modo: Avisar |cffffd36asolo en combate|r.",
@@ -84,9 +84,9 @@ local L_TABLE = {
         MSG_BLESS_OFF = "Aviso de Bendición |cffff5555desactivado|r.",
         MSG_RESET = "Posición, tamaño y preferencias restablecidos.",
         MSG_LANG_SET = "Idioma cambiado a |cffffd36aEspañol (esES)|r.",
-        MSG_WELCOME = "Activado para las 3 ramas de Paladín. Escribe |cffffd36a/bguard|r para mover los iconos o haz clic en ellos para bufarte.",
+        MSG_WELCOME = "Activado para las 3 ramas de Paladín. Escribe |cffffd36a/pbg|r para mover los iconos o haz clic en ellos para bufarte.",
         MSG_STATUS = "Rama detectada: |cffffd36a%s|r (%d/%d/%d) | Furia justa: |cffffd36a%s|r (%s)",
-        MSG_HELP = "Comandos: |cffffd36a/bguard|r (mover) | |cffffd36a/bguard status|r | |cffffd36a/bguard rf [auto|on|off]|r | |cffffd36a/bguard aura|r | |cffffd36a/bguard bendicion|r | |cffffd36a/bguard scale 0.85|r | |cffffd36a/bguard texto|r | |cffffd36a/bguard combate|r | |cffffd36a/bguard lang [es|en]|r | |cffffd36a/bguard reset|r",
+        MSG_HELP = "Comandos: |cffffd36a/pbg|r (mover) | |cffffd36a/pbg status|r | |cffffd36a/pbg rf [auto|on|off]|r | |cffffd36a/pbg aura|r | |cffffd36a/pbg bendicion|r | |cffffd36a/pbg scale 0.85|r | |cffffd36a/pbg texto|r | |cffffd36a/pbg combate|r | |cffffd36a/pbg lang [es|en]|r | |cffffd36a/pbg reset|r",
         SPEC_HOLY = "Sagrado",
         SPEC_PROTECTION = "Protección",
         SPEC_RETRIBUTION = "Reprensión",
@@ -103,10 +103,10 @@ local L_TABLE = {
         LABEL_BLESSING = "BLESSING",
         MOVER_HINT = "|cffffd36aDrag to move|r |cffaaaaaa(Right-click to lock)|r",
         MSG_COMBAT_LOCK = "Leave combat for a moment to move the icons.",
-        MSG_MOVE_ON = "Move mode |cff00ff00ACTIVE|r. Drag the icons and |cffffd36aright-click|r (or type /bguard) to lock.",
-        MSG_MOVE_OFF = "Position |cffffd36alocked|r. Type |cffffd36a/bguard|r if you want to move it again.",
+        MSG_MOVE_ON = "Move mode |cff00ff00ACTIVE|r. Drag the icons and |cffffd36aright-click|r (or type /pbg) to lock.",
+        MSG_MOVE_OFF = "Position |cffffd36alocked|r. Type |cffffd36a/pbg|r if you want to move it again.",
         MSG_SCALE_SET = "Scale set to |cffffd36a%s|r.",
-        MSG_SCALE_USAGE = "Usage: |cffffd36a/bguard scale 0.85|r (between 0.4 and 2.0)",
+        MSG_SCALE_USAGE = "Usage: |cffffd36a/pbg scale 0.85|r (between 0.4 and 2.0)",
         MSG_LABELS_ON = "Bottom labels |cff00ff00enabled|r.",
         MSG_LABELS_OFF = "Bottom labels |cffff5555hidden|r.",
         MSG_COMBAT_ONLY_ON = "Mode: Alert |cffffd36ain combat only|r.",
@@ -120,9 +120,9 @@ local L_TABLE = {
         MSG_BLESS_OFF = "Blessing alert |cffff5555disabled|r.",
         MSG_RESET = "Position, scale, and preferences reset.",
         MSG_LANG_SET = "Language set to |cffffd36aEnglish (enUS)|r.",
-        MSG_WELCOME = "Active for all 3 Paladin specs. Type |cffffd36a/bguard|r to move the icons or click them to buff up.",
+        MSG_WELCOME = "Active for all 3 Paladin specs. Type |cffffd36a/pbg|r to move the icons or click them to buff up.",
         MSG_STATUS = "Detected spec: |cffffd36a%s|r (%d/%d/%d) | Righteous Fury: |cffffd36a%s|r (%s)",
-        MSG_HELP = "Commands: |cffffd36a/bguard|r (move) | |cffffd36a/bguard status|r | |cffffd36a/bguard rf [auto|on|off]|r | |cffffd36a/bguard aura|r | |cffffd36a/bguard blessing|r | |cffffd36a/bguard scale 0.85|r | |cffffd36a/bguard text|r | |cffffd36a/bguard combat|r | |cffffd36a/bguard lang [es|en]|r | |cffffd36a/bguard reset|r",
+        MSG_HELP = "Commands: |cffffd36a/pbg|r (move) | |cffffd36a/pbg status|r | |cffffd36a/pbg rf [auto|on|off]|r | |cffffd36a/pbg aura|r | |cffffd36a/pbg blessing|r | |cffffd36a/pbg scale 0.85|r | |cffffd36a/pbg text|r | |cffffd36a/pbg combat|r | |cffffd36a/pbg lang [es|en]|r | |cffffd36a/pbg reset|r",
         SPEC_HOLY = "Holy",
         SPEC_PROTECTION = "Protection",
         SPEC_RETRIBUTION = "Retribution",
@@ -149,7 +149,7 @@ end
 
 local function Message(text)
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffffd36aBuffGuard:|r " .. text)
+        DEFAULT_CHAT_FRAME:AddMessage("|cffffd36aPalaBuffGuard:|r " .. text)
     end
 end
 
@@ -688,7 +688,7 @@ local function CreateBadge(key, labelKey, defaultIcon)
     badge.label = label
 
     -- Secure Action Button overlay parented to secureHolder and anchored to UIParent (never to badge/frame)
-    local clickBtn = CreateFrame("Button", "BuffGuardBtn_" .. key, secureHolder, "SecureActionButtonTemplate")
+    local clickBtn = CreateFrame("Button", "PalaBuffGuardBtn_" .. key, secureHolder, "SecureActionButtonTemplate")
     clickBtn:SetSize(ICON_SIZE, ICON_SIZE)
     clickBtn:SetFrameStrata("MEDIUM")
     clickBtn:SetFrameLevel(badge:GetFrameLevel() + 10)
@@ -1186,12 +1186,16 @@ local function HandleAuraDelta(updateInfo)
 end
 
 local function EnsureDB()
-    -- Migrate from legacy ForeverFuryAlertDB if present
-    if type(BuffGuardDB) ~= "table" and type(ForeverFuryAlertDB) == "table" then
-        BuffGuardDB = ForeverFuryAlertDB
+    -- Migrate from legacy BuffGuardDB / ForeverFuryAlertDB if present
+    if type(PalaBuffGuardDB) ~= "table" then
+        if type(BuffGuardDB) == "table" then
+            PalaBuffGuardDB = BuffGuardDB
+        elseif type(ForeverFuryAlertDB) == "table" then
+            PalaBuffGuardDB = ForeverFuryAlertDB
+        end
     end
-    BuffGuardDB = type(BuffGuardDB) == "table" and BuffGuardDB or {}
-    db = BuffGuardDB
+    PalaBuffGuardDB = type(PalaBuffGuardDB) == "table" and PalaBuffGuardDB or {}
+    db = PalaBuffGuardDB
     if type(db.x) ~= "number" then db.x = 0 end
     if type(db.y) ~= "number" then db.y = 140 end
     if type(db.scale) ~= "number" then db.scale = 0.85 end
@@ -1221,11 +1225,12 @@ end
 -- Slash Commands & WoW Forever Addon Compartment Callbacks
 ---------------------------------------------------------------------------
 
-SLASH_BUFFGUARD1 = "/buffguard"
-SLASH_BUFFGUARD2 = "/bguard"
-SLASH_BUFFGUARD3 = "/furia"
-SLASH_BUFFGUARD4 = "/fa"
-SlashCmdList["BUFFGUARD"] = function(msg)
+SLASH_PALABUFFGUARD1 = "/palabuffguard"
+SLASH_PALABUFFGUARD2 = "/pbg"
+SLASH_PALABUFFGUARD3 = "/buffguard"
+SLASH_PALABUFFGUARD4 = "/bguard"
+SLASH_PALABUFFGUARD5 = "/furia"
+SlashCmdList["PALABUFFGUARD"] = function(msg)
     EnsureDB()
     if not isPaladin then
         Message(L("MSG_NOT_PALADIN"))
@@ -1338,19 +1343,19 @@ SlashCmdList["BUFFGUARD"] = function(msg)
     end
 end
 
-function BuffGuard_OnAddonCompartmentClick(_, buttonName)
+function PalaBuffGuard_OnAddonCompartmentClick(_, buttonName)
     if buttonName == "RightButton" then
-        SlashCmdList["BUFFGUARD"]("status")
+        SlashCmdList["PALABUFFGUARD"]("status")
     else
-        SlashCmdList["BUFFGUARD"]("move")
+        SlashCmdList["PALABUFFGUARD"]("move")
     end
 end
 
-function BuffGuard_OnAddonCompartmentEnter(_, menuButtonFrame)
+function PalaBuffGuard_OnAddonCompartmentEnter(_, menuButtonFrame)
     if not GameTooltip then return end
     EnsureDB()
     GameTooltip:SetOwner(menuButtonFrame or UIParent, "ANCHOR_LEFT")
-    GameTooltip:AddLine("BuffGuard", 1, 0.82, 0.4)
+    GameTooltip:AddLine("PalaBuffGuard", 1, 0.82, 0.4)
     if not isPaladin then
         GameTooltip:AddLine(L("MSG_NOT_PALADIN"), 0.8, 0.8, 0.8, true)
         GameTooltip:Show()
@@ -1371,7 +1376,7 @@ function BuffGuard_OnAddonCompartmentEnter(_, menuButtonFrame)
     GameTooltip:Show()
 end
 
-function BuffGuard_OnAddonCompartmentLeave()
+function PalaBuffGuard_OnAddonCompartmentLeave()
     if GameTooltip then GameTooltip:Hide() end
 end
 
