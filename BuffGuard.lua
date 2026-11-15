@@ -20,11 +20,112 @@ local pollElapsed = 0
 local renderElapsed = 0
 local pendingSecureSync = false
 local activeBadges = {}
+local currentSpec = "none" -- "holy" | "protection" | "retribution" | "none"
+local talentPoints = { 0, 0, 0 } -- { Holy, Protection, Retribution }
 local Render
 
--- Spell IDs for dynamic localized name resolution in Forever 16001
+---------------------------------------------------------------------------
+-- Localization (esES / esMX & enUS / enGB)
+---------------------------------------------------------------------------
+
+local clientLocale = (GetLocale and GetLocale()) or "enUS"
+local defaultLang = (clientLocale == "esES" or clientLocale == "esMX") and "es" or "en"
+
+local L_TABLE = {
+    es = {
+        LABEL_RF = "FURIA",
+        LABEL_AURA = "AURA",
+        LABEL_BLESSING = "BENDICIÓN",
+        MOVER_HINT = "|cffffd36aArrastra para mover|r |cffaaaaaa(Clic derecho para bloquear)|r",
+        MSG_COMBAT_LOCK = "Sal de combate un momento para mover los iconos.",
+        MSG_MOVE_ON = "Modo mover |cff00ff00ACTIVO|r. Arrastra los iconos y haz |cffffd36aclic derecho|r (o escribe /bguard) para bloquear.",
+        MSG_MOVE_OFF = "Posición |cffffd36abloqueada|r. Escribe |cffffd36a/bguard|r si quieres volver a moverlo.",
+        MSG_SCALE_SET = "Tamaño ajustado a |cffffd36a%s|r.",
+        MSG_SCALE_USAGE = "Usa: |cffffd36a/bguard scale 0.85|r (entre 0.4 y 2.0)",
+        MSG_LABELS_ON = "Textos inferiores |cff00ff00activados|r.",
+        MSG_LABELS_OFF = "Textos inferiores |cffff5555ocultos|r.",
+        MSG_COMBAT_ONLY_ON = "Modo: Avisar |cffffd36asolo en combate|r.",
+        MSG_COMBAT_ONLY_OFF = "Modo: Avisar |cff00ff00siempre|r (combate y fuera de combate).",
+        MSG_RF_AUTO = "Aviso de Furia justa: |cff00ff00AUTOMÁTICO|r (solo avisa en talentos de |cffffd36aProtección|r).",
+        MSG_RF_ON = "Aviso de Furia justa: |cff00ff00SIEMPRE ACTIVO|r (forzado en cualquier rama).",
+        MSG_RF_OFF = "Aviso de Furia justa: |cffff5555DESACTIVADO|r.",
+        MSG_AURA_ON = "Aviso de Aura |cff00ff00activado|r.",
+        MSG_AURA_OFF = "Aviso de Aura |cffff5555desactivado|r.",
+        MSG_BLESS_ON = "Aviso de Bendición |cff00ff00activado|r.",
+        MSG_BLESS_OFF = "Aviso de Bendición |cffff5555desactivado|r.",
+        MSG_RESET = "Posición, tamaño y preferencias restablecidos.",
+        MSG_LANG_SET = "Idioma cambiado a |cffffd36aEspañol (esES)|r.",
+        MSG_WELCOME = "Activado para las 3 ramas de Paladín. Escribe |cffffd36a/bguard|r para mover los iconos o haz clic en ellos para bufarte.",
+        MSG_STATUS = "Rama detectada: |cffffd36a%s|r (%d/%d/%d) | Furia justa: |cffffd36a%s|r (%s)",
+        MSG_HELP = "Comandos: |cffffd36a/bguard|r (mover) | |cffffd36a/bguard status|r | |cffffd36a/bguard rf [auto|on|off]|r | |cffffd36a/bguard aura|r | |cffffd36a/bguard bendicion|r | |cffffd36a/bguard scale 0.85|r | |cffffd36a/bguard texto|r | |cffffd36a/bguard combate|r | |cffffd36a/bguard lang [es|en]|r | |cffffd36a/bguard reset|r",
+        SPEC_HOLY = "Sagrado",
+        SPEC_PROTECTION = "Protección",
+        SPEC_RETRIBUTION = "Reprensión",
+        SPEC_NONE = "Sin talentos (< nivel 10)",
+        STATE_ACTIVE = "vigilando",
+        STATE_INACTIVE = "no requerida en esta rama",
+    },
+    en = {
+        LABEL_RF = "FURY",
+        LABEL_AURA = "AURA",
+        LABEL_BLESSING = "BLESSING",
+        MOVER_HINT = "|cffffd36aDrag to move|r |cffaaaaaa(Right-click to lock)|r",
+        MSG_COMBAT_LOCK = "Leave combat for a moment to move the icons.",
+        MSG_MOVE_ON = "Move mode |cff00ff00ACTIVE|r. Drag the icons and |cffffd36aright-click|r (or type /bguard) to lock.",
+        MSG_MOVE_OFF = "Position |cffffd36alocked|r. Type |cffffd36a/bguard|r if you want to move it again.",
+        MSG_SCALE_SET = "Scale set to |cffffd36a%s|r.",
+        MSG_SCALE_USAGE = "Usage: |cffffd36a/bguard scale 0.85|r (between 0.4 and 2.0)",
+        MSG_LABELS_ON = "Bottom labels |cff00ff00enabled|r.",
+        MSG_LABELS_OFF = "Bottom labels |cffff5555hidden|r.",
+        MSG_COMBAT_ONLY_ON = "Mode: Alert |cffffd36ain combat only|r.",
+        MSG_COMBAT_ONLY_OFF = "Mode: Alert |cff00ff00always|r (in and out of combat).",
+        MSG_RF_AUTO = "Righteous Fury alert: |cff00ff00AUTO|r (only alerts when in |cffffd36aProtection|r talents).",
+        MSG_RF_ON = "Righteous Fury alert: |cff00ff00ALWAYS ON|r (forced in all specs).",
+        MSG_RF_OFF = "Righteous Fury alert: |cffff5555DISABLED|r.",
+        MSG_AURA_ON = "Aura alert |cff00ff00enabled|r.",
+        MSG_AURA_OFF = "Aura alert |cffff5555disabled|r.",
+        MSG_BLESS_ON = "Blessing alert |cff00ff00enabled|r.",
+        MSG_BLESS_OFF = "Blessing alert |cffff5555disabled|r.",
+        MSG_RESET = "Position, scale, and preferences reset.",
+        MSG_LANG_SET = "Language set to |cffffd36aEnglish (enUS)|r.",
+        MSG_WELCOME = "Active for all 3 Paladin specs. Type |cffffd36a/bguard|r to move the icons or click them to buff up.",
+        MSG_STATUS = "Detected spec: |cffffd36a%s|r (%d/%d/%d) | Righteous Fury: |cffffd36a%s|r (%s)",
+        MSG_HELP = "Commands: |cffffd36a/bguard|r (move) | |cffffd36a/bguard status|r | |cffffd36a/bguard rf [auto|on|off]|r | |cffffd36a/bguard aura|r | |cffffd36a/bguard blessing|r | |cffffd36a/bguard scale 0.85|r | |cffffd36a/bguard text|r | |cffffd36a/bguard combat|r | |cffffd36a/bguard lang [es|en]|r | |cffffd36a/bguard reset|r",
+        SPEC_HOLY = "Holy",
+        SPEC_PROTECTION = "Protection",
+        SPEC_RETRIBUTION = "Retribution",
+        SPEC_NONE = "No talents (< level 10)",
+        STATE_ACTIVE = "watching",
+        STATE_INACTIVE = "not required in this spec",
+    },
+}
+
+local function GetLang()
+    if db and (db.lang == "es" or db.lang == "en") then
+        return db.lang
+    end
+    return defaultLang
+end
+
+local function L(key)
+    local langTable = L_TABLE[GetLang()] or L_TABLE.es
+    return langTable[key] or L_TABLE.es[key] or key
+end
+
+---------------------------------------------------------------------------
+-- Spell IDs & Localized Fallbacks (WoW Forever 16001)
+---------------------------------------------------------------------------
+
 local RF_SPELL_IDS = { 25780 }
-local AURA_SPELL_IDS = { 465, 7294, 19746, 19876, 19888, 19891, 20218 }
+local AURA_SPELL_IDS = {
+    465,   -- Devotion Aura
+    7294,  -- Retribution Aura
+    19746, -- Concentration Aura
+    19876, -- Shadow Resistance Aura
+    19888, -- Frost Resistance Aura
+    19891, -- Fire Resistance Aura
+    20218, -- Sanctity Aura
+}
 local BLESSING_SPELL_IDS = {
     19740, 19834, 19835, 19836, 19837, 19838, 25291, -- Might
     19742, 19850, 19852, 19853, 19854, 25290,        -- Wisdom
@@ -102,13 +203,17 @@ local DEFAULT_ICONS = {
     blessing = "Interface\\Icons\\Spell_Holy_FistOfJustice",
 }
 
--- Resolved primary spell names for click-casting at max rank
+-- Resolved spell names by type for smart per-spec click-casting at max rank
 local resolvedSpells = {
-    rf = "Furia justa",
-    auraPrimary = "Aura de represalia",
-    auraSecondary = "Aura de devoción",
-    blessingPrimary = "Bendición del poderío",
-    blessingSecondary = "Bendición de Sabiduría",
+    rf = (defaultLang == "es") and "Furia justa" or "Righteous Fury",
+    devotionAura = (defaultLang == "es") and "Aura de devoción" or "Devotion Aura",
+    retributionAura = (defaultLang == "es") and "Aura de represalia" or "Retribution Aura",
+    concentrationAura = (defaultLang == "es") and "Aura de concentración" or "Concentration Aura",
+    sanctityAura = (defaultLang == "es") and "Aura de santidad" or "Sanctity Aura",
+    blessingMight = (defaultLang == "es") and "Bendición del poderío" or "Blessing of Might",
+    blessingWisdom = (defaultLang == "es") and "Bendición de Sabiduría" or "Blessing of Wisdom",
+    blessingKings = (defaultLang == "es") and "Bendición de los Reyes" or "Blessing of Kings",
+    blessingSanctuary = (defaultLang == "es") and "Bendición de salvaguardia" or "Blessing of Sanctuary",
 }
 
 -- Tracked runtime state (persists across restricted combat scans)
@@ -143,6 +248,181 @@ local function HasAtlas(name)
     return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name)
 end
 
+local function IsPlayerSpellKnown(spellID)
+    if C_SpellBook and C_SpellBook.IsSpellKnown then
+        local ok, known = pcall(C_SpellBook.IsSpellKnown, spellID)
+        if ok and IsReadable(known) and known then return true end
+    end
+    if IsSpellKnown then
+        local ok, known = pcall(IsSpellKnown, spellID)
+        if ok and IsReadable(known) and known then return true end
+    end
+    return false
+end
+
+---------------------------------------------------------------------------
+-- WoW Forever (1.60.1 / 16001) Talent Spec Detection (3 Paladin Branches)
+-- Columns left-to-right: 1 = Holy, 2 = Protection, 3 = Retribution
+---------------------------------------------------------------------------
+
+local function GetForeverTreePoints()
+    local CT, T = C_ClassTalents, C_Traits
+    if CT and CT.GetActiveConfigID and T and T.GetConfigInfo and T.GetGroupDisplayInfoByTreeID and T.GetGroupCurrencyInfo then
+        local ok, config = pcall(CT.GetActiveConfigID)
+        if ok and IsFiniteNumber(config) then
+            local ok2, info = pcall(T.GetConfigInfo, config)
+            local tree = ok2 and type(info) == "table" and type(info.treeIDs) == "table" and info.treeIDs[1]
+            if IsFiniteNumber(tree) then
+                local ok3, shown = pcall(T.GetGroupDisplayInfoByTreeID, tree)
+                if ok3 and type(shown) == "table" and shown[1] then
+                    local ids = {}
+                    for i, d in ipairs(shown) do ids[i] = d.groupID end
+                    local ok4, groups = pcall(T.GetGroupCurrencyInfo, config, ids)
+                    local spent = {}
+                    if ok4 and type(groups) == "table" then
+                        for _, g in ipairs(groups) do
+                            local c = type(g) == "table" and type(g.currencyInfos) == "table" and g.currencyInfos[1]
+                            if type(c) == "table" and g.traitNodeGroupID ~= nil and IsFiniteNumber(c.spent) then
+                                spent[g.traitNodeGroupID] = c.spent
+                            end
+                        end
+                    end
+                    local p1 = (shown[1] and spent[shown[1].groupID]) or 0
+                    local p2 = (shown[2] and spent[shown[2].groupID]) or 0
+                    local p3 = (shown[3] and spent[shown[3].groupID]) or 0
+                    return p1, p2, p3, true
+                end
+            end
+        end
+    end
+
+    -- Fallback 2: C_SpecializationInfo.GetSpecializationInfo(1..3)
+    local S = C_SpecializationInfo
+    if S and S.GetSpecializationInfo then
+        local pts = { 0, 0, 0 }
+        local anyOk = false
+        for i = 1, 3 do
+            local ok, _, _, _, _, _, _, points = pcall(S.GetSpecializationInfo, i)
+            if ok and IsFiniteNumber(points) then
+                pts[i] = points
+                anyOk = true
+            end
+        end
+        if anyOk then
+            return pts[1], pts[2], pts[3], true
+        end
+    end
+
+    -- Fallback 3: Classic GetTalentTabInfo(1..3)
+    if GetTalentTabInfo then
+        local pts = { 0, 0, 0 }
+        local anyOk = false
+        for i = 1, 3 do
+            local ok, _, _, pointsSpent = pcall(GetTalentTabInfo, i)
+            if ok and IsFiniteNumber(pointsSpent) then
+                pts[i] = pointsSpent
+                anyOk = true
+            end
+        end
+        if anyOk then
+            return pts[1], pts[2], pts[3], true
+        end
+    end
+
+    return 0, 0, 0, false
+end
+
+local function DetectPaladinSpec()
+    local p1, p2, p3, found = GetForeverTreePoints()
+    talentPoints[1], talentPoints[2], talentPoints[3] = p1, p2, p3
+
+    if found and (p1 > 0 or p2 > 0 or p3 > 0) then
+        if p2 > 0 and p2 >= p1 and p2 >= p3 then
+            currentSpec = "protection"
+        elseif p1 > 0 and p1 >= p2 and p1 >= p3 then
+            currentSpec = "holy"
+        else
+            currentSpec = "retribution"
+        end
+        return currentSpec
+    end
+
+    -- Fallback: Primary spec selection on clients where 0 points are spent but a tab is selected
+    local S = C_SpecializationInfo
+    if S and S.GetSpecialization then
+        local ok, idx = pcall(S.GetSpecialization)
+        if ok and IsFiniteNumber(idx) then
+            if idx == 1 then currentSpec = "holy"; return currentSpec end
+            if idx == 2 then currentSpec = "protection"; return currentSpec end
+            if idx == 3 then currentSpec = "retribution"; return currentSpec end
+        end
+    end
+
+    currentSpec = "none"
+    return currentSpec
+end
+
+-- Determines if Righteous Fury should be monitored right now
+local function ShouldTrackRF()
+    if not db then return false end
+    local mode = db.rfMode or "auto"
+    if mode == "off" then
+        return false
+    elseif mode == "on" then
+        return true
+    else
+        -- "auto": ONLY alert when in Protection talents!
+        return currentSpec == "protection"
+    end
+end
+
+-- Returns smart primary & secondary spells for Aura and Blessing based on active talent tree
+local function GetSpecDefaultSpells()
+    local auraPrimary = resolvedSpells.retributionAura
+    local auraSecondary = resolvedSpells.devotionAura
+    local blessPrimary = resolvedSpells.blessingMight
+    local blessSecondary = resolvedSpells.blessingWisdom
+
+    if currentSpec == "protection" then
+        auraPrimary = resolvedSpells.devotionAura
+        auraSecondary = resolvedSpells.retributionAura
+        if IsPlayerSpellKnown(20911) then
+            blessPrimary = resolvedSpells.blessingSanctuary
+            blessSecondary = resolvedSpells.blessingMight
+        else
+            blessPrimary = resolvedSpells.blessingMight
+            blessSecondary = resolvedSpells.blessingWisdom
+        end
+    elseif currentSpec == "holy" then
+        if IsPlayerSpellKnown(19746) then
+            auraPrimary = resolvedSpells.concentrationAura
+            auraSecondary = resolvedSpells.devotionAura
+        else
+            auraPrimary = resolvedSpells.devotionAura
+            auraSecondary = resolvedSpells.retributionAura
+        end
+        blessPrimary = resolvedSpells.blessingWisdom
+        if IsPlayerSpellKnown(20217) then
+            blessSecondary = resolvedSpells.blessingKings
+        else
+            blessSecondary = resolvedSpells.blessingMight
+        end
+    else
+        -- Retribution or pre-10 leveling
+        if IsPlayerSpellKnown(20218) then
+            auraPrimary = resolvedSpells.sanctityAura
+            auraSecondary = resolvedSpells.retributionAura
+        else
+            auraPrimary = resolvedSpells.retributionAura
+            auraSecondary = resolvedSpells.devotionAura
+        end
+        blessPrimary = resolvedSpells.blessingMight
+        blessSecondary = resolvedSpells.blessingWisdom
+    end
+
+    return auraPrimary, auraSecondary, blessPrimary, blessSecondary
+end
+
 local function BuildSpellNames()
     if not (C_Spell and C_Spell.GetSpellName) then return end
     for _, id in ipairs(RF_SPELL_IDS) do
@@ -156,16 +436,20 @@ local function BuildSpellNames()
         local name = C_Spell.GetSpellName(id)
         if IsReadableString(name) and name ~= "" then
             auraNames[name] = true
-            if id == 7294 then resolvedSpells.auraPrimary = name end
-            if id == 465 then resolvedSpells.auraSecondary = name end
+            if id == 465 then resolvedSpells.devotionAura = name end
+            if id == 7294 then resolvedSpells.retributionAura = name end
+            if id == 19746 then resolvedSpells.concentrationAura = name end
+            if id == 20218 then resolvedSpells.sanctityAura = name end
         end
     end
     for _, id in ipairs(BLESSING_SPELL_IDS) do
         local name = C_Spell.GetSpellName(id)
         if IsReadableString(name) and name ~= "" then
             blessingNames[name] = true
-            if id == 19740 then resolvedSpells.blessingPrimary = name end
-            if id == 19742 then resolvedSpells.blessingSecondary = name end
+            if id == 19740 then resolvedSpells.blessingMight = name end
+            if id == 19742 then resolvedSpells.blessingWisdom = name end
+            if id == 20217 then resolvedSpells.blessingKings = name end
+            if id == 20911 then resolvedSpells.blessingSanctuary = name end
         end
     end
 end
@@ -185,7 +469,10 @@ local function IsBlessingName(name)
     return false
 end
 
+---------------------------------------------------------------------------
 -- Create UI Container & Mover Backdrop
+---------------------------------------------------------------------------
+
 local ICON_SIZE = 42
 local ICON_GAP = 12
 
@@ -201,13 +488,14 @@ moverBg:Hide()
 
 local moverText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 moverText:SetPoint("BOTTOM", frame, "TOP", 0, 4)
-moverText:SetText("|cffffd36aArrastra para mover|r |cffaaaaaa(Clic derecho para bloquear)|r")
+moverText:SetText(L("MOVER_HINT"))
 moverText:Hide()
 
-local function CreateBadge(key, labelText, defaultIcon)
+local function CreateBadge(key, labelKey, defaultIcon)
     local badge = CreateFrame("Frame", nil, frame)
     badge:SetSize(ICON_SIZE, ICON_SIZE)
     badge.key = key
+    badge.labelKey = labelKey
     badge.offsetX = 0
     badge.offsetY = 4
 
@@ -289,7 +577,7 @@ local function CreateBadge(key, labelText, defaultIcon)
     -- Minimalist label underneath
     local label = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     label:SetPoint("TOP", badge, "BOTTOM", 0, -4)
-    label:SetText(labelText)
+    label:SetText(L(labelKey))
     label:SetTextColor(1, 0.85, 0.45)
     label:SetShadowOffset(1, -1)
     badge.label = label
@@ -310,11 +598,20 @@ local function CreateBadge(key, labelText, defaultIcon)
 end
 
 local badges = {
-    rf = CreateBadge("rf", "FURIA", DEFAULT_ICONS.rf),
-    aura = CreateBadge("aura", "AURA", DEFAULT_ICONS.aura),
-    blessing = CreateBadge("blessing", "BENDICIÓN", DEFAULT_ICONS.blessing),
+    rf = CreateBadge("rf", "LABEL_RF", DEFAULT_ICONS.rf),
+    aura = CreateBadge("aura", "LABEL_AURA", DEFAULT_ICONS.aura),
+    blessing = CreateBadge("blessing", "LABEL_BLESSING", DEFAULT_ICONS.blessing),
 }
 local allBadges = { badges.rf, badges.aura, badges.blessing }
+
+local function RefreshBadgeLabels()
+    moverText:SetText(L("MOVER_HINT"))
+    for _, b in ipairs(allBadges) do
+        if b.label and b.labelKey then
+            b.label:SetText(L(b.labelKey))
+        end
+    end
+end
 
 local function UpdateSecureButton(btn, macro1, macro2, scale, targetX, targetY, shouldShow)
     if btn.lastMacro1 ~= macro1 then
@@ -354,6 +651,8 @@ local function SyncSecureButtons()
     local baseY = (db and db.y) or 140
     local frameVisible = frame:IsShown() and not unlocked
 
+    local defAura1, defAura2, defBless1, defBless2 = GetSpecDefaultSpells()
+
     -- 1. Righteous Fury macro (casts max rank automatically when rank is omitted)
     local rfSpell = (db and db.lastRFName) or resolvedSpells.rf
     local rfMacro = "/cast " .. rfSpell
@@ -368,8 +667,8 @@ local function SyncSecureButtons()
     )
 
     -- 2. Aura macro ([noform] guarantees clicking never toggles an active aura off)
-    local aura1 = (db and db.lastAuraName) or resolvedSpells.auraPrimary
-    local aura2 = (aura1 == resolvedSpells.auraSecondary) and resolvedSpells.auraPrimary or resolvedSpells.auraSecondary
+    local aura1 = (db and db.lastAuraName) or defAura1
+    local aura2 = (aura1 == defAura2) and defAura1 or defAura2
     UpdateSecureButton(
         badges.aura.clickBtn,
         "/cast [noform] " .. aura1,
@@ -381,8 +680,8 @@ local function SyncSecureButtons()
     )
 
     -- 3. Blessing macro ([@player] casts max rank on self without losing hostile target)
-    local bless1 = (db and db.lastBlessingName) or resolvedSpells.blessingPrimary
-    local bless2 = (bless1 == resolvedSpells.blessingSecondary) and resolvedSpells.blessingPrimary or resolvedSpells.blessingSecondary
+    local bless1 = (db and db.lastBlessingName) or defBless1
+    local bless2 = (bless1 == defBless2) and defBless1 or defBless2
     UpdateSecureButton(
         badges.blessing.clickBtn,
         "/cast [@player] " .. bless1,
@@ -426,7 +725,7 @@ frame:SetScript("OnMouseUp", function(_, button)
         unlocked = false
         ApplyPosition()
         Render()
-        Message("Posición bloqueada. Escribe |cffffd36a/bguard|r si quieres volver a moverlo.")
+        Message(L("MSG_MOVE_OFF"))
     end
 end)
 
@@ -449,6 +748,7 @@ end
 
 local function ScanAllBuffs()
     local now = GetTime()
+    DetectPaladinSpec()
 
     -- 1. Check Aura via Shapeshift Form (100% reliable in and out of combat) + buff fallback
     local form = GetShapeshiftForm and GetShapeshiftForm() or 0
@@ -592,8 +892,8 @@ Render = function()
     local isPreview = unlocked or (now < previewUntil)
     wipe(activeBadges)
 
-    -- 1. Righteous Fury
-    if db.trackRF ~= false then
+    -- 1. Righteous Fury (only tracked in Protection talents when rfMode == "auto", or always if rfMode == "on")
+    if ShouldTrackRF() or unlocked then
         badges.rf.icon:SetTexture(tracked.rf.icon or DEFAULT_ICONS.rf)
         if isPreview or not tracked.rf.active then
             StyleBadgeState(badges.rf, "missing", 0)
@@ -604,10 +904,12 @@ Render = function()
             badges.rf:Hide()
         end
     else
+        badges.rf.pulse:Stop()
+        badges.rf.bounce:Stop()
         badges.rf:Hide()
     end
 
-    -- 2. Aura
+    -- 2. Aura (all 3 specs: Holy, Protection, Retribution)
     if db.trackAura ~= false then
         badges.aura.icon:SetTexture(tracked.aura.icon or DEFAULT_ICONS.aura)
         if isPreview or not tracked.aura.active then
@@ -622,7 +924,7 @@ Render = function()
         badges.aura:Hide()
     end
 
-    -- 3. Blessing
+    -- 3. Blessing (all 3 specs: Holy, Protection, Retribution)
     if db.trackBlessing ~= false then
         badges.blessing.icon:SetTexture(tracked.blessing.icon or DEFAULT_ICONS.blessing)
         local rem = (tracked.blessing.expirationTime or 0) - now
@@ -683,7 +985,6 @@ local function HandleAuraDelta(updateInfo)
     if not IsReadable(updateInfo) or type(updateInfo) ~= "table" then return end
     local now = GetTime()
 
-    -- Check removedAuraInstanceIDs
     local removed = updateInfo.removedAuraInstanceIDs
     if IsReadable(removed) and type(removed) == "table" then
         for _, id in ipairs(removed) do
@@ -700,7 +1001,6 @@ local function HandleAuraDelta(updateInfo)
         end
     end
 
-    -- Check addedAuras
     local added = updateInfo.addedAuras
     if IsReadable(added) and type(added) == "table" then
         for _, aura in ipairs(added) do
@@ -728,12 +1028,22 @@ local function HandleAuraDelta(updateInfo)
 end
 
 local function EnsureDB()
+    -- Migrate from legacy ForeverFuryAlertDB if present
+    if type(BuffGuardDB) ~= "table" and type(ForeverFuryAlertDB) == "table" then
+        BuffGuardDB = ForeverFuryAlertDB
+    end
     BuffGuardDB = type(BuffGuardDB) == "table" and BuffGuardDB or {}
     db = BuffGuardDB
     if type(db.x) ~= "number" then db.x = 0 end
     if type(db.y) ~= "number" then db.y = 140 end
     if type(db.scale) ~= "number" then db.scale = 0.85 end
-    if db.trackRF == nil then db.trackRF = true end
+    if type(db.rfMode) ~= "string" then
+        if db.trackRF == false then
+            db.rfMode = "off"
+        else
+            db.rfMode = "auto"
+        end
+    end
     if db.trackAura == nil then db.trackAura = true end
     if db.trackBlessing == nil then db.trackBlessing = true end
     if db.showLabels == nil then db.showLabels = true end
@@ -742,18 +1052,26 @@ local function EnsureDB()
     return db
 end
 
+local function GetLocalizedSpecName()
+    if currentSpec == "holy" then return L("SPEC_HOLY") end
+    if currentSpec == "protection" then return L("SPEC_PROTECTION") end
+    if currentSpec == "retribution" then return L("SPEC_RETRIBUTION") end
+    return L("SPEC_NONE")
+end
+
 SLASH_BUFFGUARD1 = "/buffguard"
 SLASH_BUFFGUARD2 = "/bguard"
-SLASH_BUFFGUARD3 = "/bguard"
+SLASH_BUFFGUARD3 = "/furia"
 SLASH_BUFFGUARD4 = "/fa"
 SlashCmdList["BUFFGUARD"] = function(msg)
     EnsureDB()
     local cmd, arg = (msg or ""):match("^(%S*)%s*(.-)%s*$")
     cmd = (cmd or ""):lower()
+    arg = (arg or ""):lower()
 
     if cmd == "" or cmd == "move" or cmd == "mover" or cmd == "unlock" or cmd == "lock" then
         if InCombat() then
-            Message("Sal de combate un momento para mover los iconos.")
+            Message(L("MSG_COMBAT_LOCK"))
             return
         end
         if cmd == "lock" then
@@ -766,49 +1084,102 @@ SlashCmdList["BUFFGUARD"] = function(msg)
         ApplyPosition()
         Render()
         if unlocked then
-            Message("Modo mover |cff00ff00ACTIVO|r. Arrastra los iconos y haz |cffffd36aclic derecho|r (o escribe /bguard) para bloquear.")
+            Message(L("MSG_MOVE_ON"))
         else
-            Message("Posición |cffffd36abloqueada|r.")
+            Message(L("MSG_MOVE_OFF"))
         end
+    elseif cmd == "status" or cmd == "info" or cmd == "spec" or cmd == "rama" then
+        DetectPaladinSpec()
+        local rfState = ShouldTrackRF() and L("STATE_ACTIVE") or L("STATE_INACTIVE")
+        Message(string.format(
+            L("MSG_STATUS"),
+            GetLocalizedSpecName(),
+            talentPoints[1], talentPoints[2], talentPoints[3],
+            (db.rfMode or "auto"):upper(),
+            rfState
+        ))
     elseif cmd == "scale" or cmd == "size" or cmd == "tamano" then
         local val = tonumber(arg)
         if val and val >= 0.4 and val <= 2.0 then
             db.scale = val
             ApplyPosition()
             Render()
-            Message("Tamaño ajustado a |cffffd36a" .. val .. "|r.")
+            Message(string.format(L("MSG_SCALE_SET"), tostring(val)))
         else
-            Message("Usa: |cffffd36a/bguard scale 0.8|r (entre 0.4 y 2.0)")
+            Message(L("MSG_SCALE_USAGE"))
         end
     elseif cmd == "texto" or cmd == "text" or cmd == "labels" then
         db.showLabels = not (db.showLabels ~= false)
         Render()
-        Message("Textos inferiores " .. (db.showLabels and "|cff00ff00activados|r." or "|cffff5555ocultos|r."))
+        Message(db.showLabels and L("MSG_LABELS_ON") or L("MSG_LABELS_OFF"))
     elseif cmd == "combate" or cmd == "combat" then
         db.combatOnly = not db.combatOnly
         Render()
-        Message(db.combatOnly and "Modo: Avisar |cffffd36asolo en combate|r." or "Modo: Avisar |cff00ff00siempre|r (combate y fuera de combate).")
-    elseif cmd == "rf" or cmd == "furia" then
-        db.trackRF = not (db.trackRF ~= false)
+        Message(db.combatOnly and L("MSG_COMBAT_ONLY_ON") or L("MSG_COMBAT_ONLY_OFF"))
+    elseif cmd == "rf" or cmd == "furia" or cmd == "fury" then
+        if arg == "auto" then
+            db.rfMode = "auto"
+        elseif arg == "on" or arg == "si" or arg == "always" then
+            db.rfMode = "on"
+        elseif arg == "off" or arg == "no" then
+            db.rfMode = "off"
+        else
+            -- Cycle: auto -> on -> off -> auto
+            if db.rfMode == "auto" then
+                db.rfMode = "on"
+            elseif db.rfMode == "on" then
+                db.rfMode = "off"
+            else
+                db.rfMode = "auto"
+            end
+        end
         Render()
-        Message("Aviso de Furia " .. (db.trackRF and "|cff00ff00activado|r." or "|cffff5555desactivado|r."))
+        if db.rfMode == "auto" then
+            Message(L("MSG_RF_AUTO"))
+        elseif db.rfMode == "on" then
+            Message(L("MSG_RF_ON"))
+        else
+            Message(L("MSG_RF_OFF"))
+        end
     elseif cmd == "aura" then
         db.trackAura = not (db.trackAura ~= false)
         Render()
-        Message("Aviso de Aura " .. (db.trackAura and "|cff00ff00activado|r." or "|cffff5555desactivado|r."))
+        Message(db.trackAura and L("MSG_AURA_ON") or L("MSG_AURA_OFF"))
     elseif cmd == "bendicion" or cmd == "blessing" then
         db.trackBlessing = not (db.trackBlessing ~= false)
         Render()
-        Message("Aviso de Bendición " .. (db.trackBlessing and "|cff00ff00activado|r." or "|cffff5555desactivado|r."))
+        Message(db.trackBlessing and L("MSG_BLESS_ON") or L("MSG_BLESS_OFF"))
+    elseif cmd == "lang" or cmd == "idioma" or cmd == "locale" then
+        if arg == "es" or arg == "eses" then
+            db.lang = "es"
+        elseif arg == "en" or arg == "enus" then
+            db.lang = "en"
+        else
+            db.lang = (GetLang() == "es") and "en" or "es"
+        end
+        RefreshBadgeLabels()
+        Render()
+        Message(L("MSG_LANG_SET"))
     elseif cmd == "reset" then
         db.x, db.y, db.scale = 0, 140, 0.85
+        db.rfMode = "auto"
+        db.trackAura = true
+        db.trackBlessing = true
         ApplyPosition()
         Render()
-        Message("Posición y tamaño restablecidos.")
+        Message(L("MSG_RESET"))
     else
-        Message("Comandos: |cffffd36a/bguard|r (mover) | |cffffd36a/bguard scale 0.8|r | |cffffd36a/bguard texto|r | |cffffd36a/bguard rf|r | |cffffd36a/bguard aura|r | |cffffd36a/bguard bendicion|r | |cffffd36a/bguard combate|r | |cffffd36a/bguard reset|r")
+        Message(L("MSG_HELP"))
     end
 end
+
+local TALENT_EVENTS = {
+    "TRAIT_CONFIG_UPDATED",
+    "PLAYER_TALENT_UPDATE",
+    "CHARACTER_POINTS_CHANGED",
+    "ACTIVE_TALENT_GROUP_CHANGED",
+    "PLAYER_LEVEL_UP",
+}
 
 driver:RegisterEvent("ADDON_LOADED")
 driver:RegisterEvent("PLAYER_LOGIN")
@@ -823,7 +1194,9 @@ driver:SetScript("OnEvent", function(_, event, unit, castGUID, spellID)
         end
 
         EnsureDB()
+        RefreshBadgeLabels()
         BuildSpellNames()
+        DetectPaladinSpec()
         ApplyPosition()
 
         driver:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -836,20 +1209,31 @@ driver:SetScript("OnEvent", function(_, event, unit, castGUID, spellID)
         driver:RegisterEvent("PLAYER_ALIVE")
         driver:RegisterEvent("PLAYER_UNGHOST")
         driver:RegisterEvent("SPELLS_CHANGED")
+        for _, tev in ipairs(TALENT_EVENTS) do
+            pcall(driver.RegisterEvent, driver, tev)
+        end
 
         inCombat = UnitAffectingCombat and UnitAffectingCombat("player") == true
         ScanAllBuffs()
         Render()
     elseif event == "PLAYER_ENTERING_WORLD" then
+        RefreshBadgeLabels()
         BuildSpellNames()
+        DetectPaladinSpec()
         inCombat = UnitAffectingCombat and UnitAffectingCombat("player") == true
         ApplyPosition()
         ScanAllBuffs()
         if not db.welcomed then
             db.welcomed = true
             previewUntil = GetTime() + 4
-            Message("Activado. Escribe |cffffd36a/bguard|r para mover los iconos o haz clic en ellos para bufarte.")
+            Message(L("MSG_WELCOME"))
         end
+        Render()
+    elseif event == "TRAIT_CONFIG_UPDATED" or event == "PLAYER_TALENT_UPDATE"
+        or event == "CHARACTER_POINTS_CHANGED" or event == "ACTIVE_TALENT_GROUP_CHANGED"
+        or event == "PLAYER_LEVEL_UP" then
+        DetectPaladinSpec()
+        ScanAllBuffs()
         Render()
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         if unit ~= "player" or not IsFiniteNumber(spellID) then return end
@@ -885,6 +1269,7 @@ driver:SetScript("OnEvent", function(_, event, unit, castGUID, spellID)
         end
     elseif event == "UPDATE_SHAPESHIFT_FORM" or event == "SPELLS_CHANGED" then
         BuildSpellNames()
+        DetectPaladinSpec()
         ScanAllBuffs()
         Render()
     elseif event == "PLAYER_REGEN_DISABLED" then
